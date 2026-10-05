@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block titulo %}Validador DOI2BIB{% endblock %}</title>
+<style>
+  :root { --bg:#101418; --panel:#1a2027; --borde:#2c3540; --txt:#dce3ea;
+          --acento:#4da3ff; --apagado:#8a97a3; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:Segoe UI,system-ui,sans-serif; background:var(--bg);
+         color:var(--txt); }
+  header { background:var(--panel); border-bottom:1px solid var(--borde);
+           padding:14px 24px; display:flex; gap:18px; align-items:baseline; }
+  header h1 { font-size:1.15rem; margin:0; }
+  header a { color:var(--apagado); text-decoration:none; font-size:.9rem; }
+  header a:hover { color:var(--acento); }
+  main { max-width:1200px; margin:24px auto; padding:0 20px; }
+  .panel { background:var(--panel); border:1px solid var(--borde);
+           border-radius:10px; padding:18px 20px; margin-bottom:20px; }
+  h2 { margin-top:0; font-size:1.05rem; }
+  label { display:block; margin:10px 0 4px; font-size:.9rem; color:var(--apagado); }
+  input[type=file], input[type=number] { width:100%; padding:8px;
+    background:#0d1117; color:var(--txt); border:1px solid var(--borde);
+    border-radius:6px; }
+  .checks label { display:flex; gap:8px; align-items:center; margin:8px 0;
+                  color:var(--txt); }
+  button, .boton { background:var(--acento); color:#08121d; border:0;
+    padding:9px 18px; border-radius:6px; font-weight:600; cursor:pointer;
+    text-decoration:none; display:inline-block; font-size:.92rem; }
+  button:hover, .boton:hover { filter:brightness(1.1); }
+  .secundario { background:#263039; color:var(--txt); }
+  table { width:100%; border-collapse:collapse; font-size:.88rem; }
+  th, td { text-align:left; padding:7px 9px; border-bottom:1px solid var(--borde);
+           vertical-align:top; }
+  th { color:var(--apagado); font-weight:600; font-size:.8rem;
+       text-transform:uppercase; letter-spacing:.04em; }
+  td a { color:var(--acento); text-decoration:none; }
+  .mono { font-family:Consolas,monospace; font-size:.82rem; }
+  .barra { height:10px; background:#0d1117; border-radius:6px; overflow:hidden;
+           border:1px solid var(--borde); }
+  .barra > div { height:100%; background:var(--acento); width:0;
+                 transition:width .6s; }
+  .aviso { color:#f0b429; } .error { color:#ff6b6b; }
+  .ok { color:#69db7c; } .chips { display:flex; flex-wrap:wrap; gap:6px;
+    margin:8px 0; } .chip { padding:3px 10px; border-radius:20px;
+    background:#0d1117; border:1px solid var(--borde); font-size:.8rem;
+    color:var(--txt); text-decoration:none; } .chip.activa { border-color:var(--acento);
+    color:var(--acento); }
+  pre { background:#0d1117; border:1px solid var(--borde); border-radius:8px;
+    padding:12px; overflow:auto; font-size:.8rem; max-height:420px; }
+  .detalle dd { margin:0 0 8px; } .detalle dt { color:var(--apagado);
+    font-size:.8rem; margin-top:10px; }
+  .fila-estado-PENDIENTE { opacity:.55; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🔬 Validador DOI2BIB</h1>
+  <a href="{% url 'referencias:index' %}">Inicio</a>
+  <a href="/admin/">Admin</a>
+  <span style="margin-left:auto;color:var(--apagado);font-size:.8rem">
+    doi2bib.org · headless · Bonsai local</span>
+</header>
+<main>{% block contenido %}{% endblock %}</main>
+</body>
+</html>

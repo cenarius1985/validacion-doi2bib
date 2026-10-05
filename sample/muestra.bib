@@ -1,0 +1,66 @@
+% Muestra de prueba del validador DOI2BIB.
+% DOIs REALES verificados (historial-fixes-bib.md, skill paper-mri-us):
+%   - 10.1148/radiology.153.1.6089263  -> OK (fix de Dixon1984)
+%   - 10.1148/radiology.153.1.6477058  -> roto conocido (Not Found)
+%   - 10.1016/0022-2364(88)90131-X     -> OK (Conolly1988, VERSE)
+%   - 10.1093/jbmr/zjae053             -> OK (Jerban2024)
+% Casos deliberadamente erróneos para probar MISMATCH: ConollyErr (año),
+% Jerban2024 (año). Caso sin DOI: Mansfield1977 (metadatos reales).
+
+@article{Dixon1984,
+  author = {Dixon, R. L.},
+  title = {Simple proton spectroscopic imaging},
+  journal = {Radiology},
+  year = {1984},
+  volume = {153},
+  number = {1},
+  pages = {189--194},
+  doi = {10.1148/radiology.153.1.6089263}
+}
+
+@article{DixonRoto,
+  author = {Dixon, R. L.},
+  title = {Simple proton spectroscopic imaging},
+  journal = {Radiology},
+  year = {1984},
+  doi = {10.1148/radiology.153.1.6477058}
+}
+
+@article{Conolly1988,
+  author = {Conolly, S. M. and Nishimura, D. G. and Macovski, A.},
+  title = {Variable-rate selective excitation pulses},
+  journal = {Journal of Magnetic Resonance},
+  year = {1988},
+  volume = {78},
+  number = {3},
+  pages = {440--458},
+  doi = {10.1016/0022-2364(88)90131-X}
+}
+
+@article{ConollyErr,
+  author = {Conolly, S. M. and Nishimura, D. G. and Macovski, A.},
+  title = {Variable-rate selective excitation pulses},
+  journal = {Journal of Magnetic Resonance},
+  year = {1999},
+  volume = {78},
+  number = {3},
+  pages = {440--458},
+  doi = {10.1016/0022-2364(88)90131-X}
+}
+
+@article{Mansfield1977,
+  author = {Mansfield, P.},
+  title = {Multi-planar image formation using {NMR} spin echoes},
+  journal = {Journal of Physics C: Solid State Physics},
+  year = {1977},
+  volume = {10},
+  pages = {L55}
+}
+
+@article{Jerban2024,
+  author = {Jerban, S. and others},
+  title = {Trabecular bone imaging (entrada de prueba: titulo aproximado)},
+  journal = {Journal of Bone and Mineral Research},
+  year = {2023},
+  doi = {10.1093/jbmr/zjae053}
+}

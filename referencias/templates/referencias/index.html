@@ -1,0 +1,49 @@
+{% extends "referencias/base.html" %}
+{% block titulo %}Inicio · Validador DOI2BIB{% endblock %}
+{% block contenido %}
+
+<div class="panel">
+  <h2>Subir un .bib para validar contra doi2bib.org</h2>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <label>Archivo BibTeX (.bib, máx. 20 MB)</label>
+    {{ form.archivo }}
+    <label>Pestañas en paralelo contra doi2bib (1–20)</label>
+    {{ form.tabs }}
+    <div class="checks">
+      <label>{{ form.usar_bonsai }} {{ form.usar_bonsai.label }}</label>
+      <label>{{ form.buscar_por_nombre }} {{ form.buscar_por_nombre.label }}</label>
+    </div>
+    <p style="color:var(--apagado);font-size:.82rem">
+      La navegación es siempre <strong>headless</strong> dentro del contenedor:
+      no se abre ninguna ventana en tu pantalla. Nada se inventa: todo DOI
+      propuesto se verifica en doi2bib antes de aceptarse.
+    </p>
+    <button type="submit">Validar referencias</button>
+  </form>
+</div>
+
+<div class="panel">
+  <h2>Lotes</h2>
+  {% if lotes %}
+  <table>
+    <tr><th>ID</th><th>Archivo</th><th>Estado</th><th>Progreso</th>
+        <th>Creado</th><th></th></tr>
+    {% for l in lotes %}
+    <tr>
+      <td>{{ l.pk }}</td>
+      <td>{{ l.nombre }}</td>
+      <td>{{ l.get_estado_display }}</td>
+      <td>{{ l.procesadas }}/{{ l.total }}</td>
+      <td>{{ l.creado|date:"d-m-Y H:i" }}</td>
+      <td><a href="{% url 'referencias:lote' l.pk %}">Ver resultados →</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p style="color:var(--apagado)">Aún no hay lotes. Sube un .bib arriba o usa
+  el comando <span class="mono">python manage.py validar --bib archivo.bib</span>.</p>
+  {% endif %}
+</div>
+{% endblock %}

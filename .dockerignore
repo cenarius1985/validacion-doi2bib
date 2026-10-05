@@ -1,0 +1,9 @@
+.git
+.gitignore
+.env
+data
+media
+__pycache__
+*.pyc
+db.sqlite3
+README.md

@@ -1,0 +1,51 @@
+{% extends "referencias/base.html" %}
+{% block titulo %}{{ ref.clave }} · Validador DOI2BIB{% endblock %}
+{% block contenido %}
+
+<div class="panel">
+  <h2>{{ ref.icono }} {{ ref.clave }}
+      <span style="float:right;font-size:.9rem">
+        <a href="{% url 'referencias:lote' ref.lote_id %}">← volver al lote</a></span></h2>
+
+  <dl class="detalle">
+    <dt>Estado</dt><dd>{{ ref.icono }} {{ ref.get_estado_display }} — {{ ref.detalle }}</dd>
+    <dt>DOI en el .bib</dt><dd class="mono">{{ ref.doi|default:"— (sin DOI)" }}</dd>
+    {% if ref.doi_propuesto %}<dt>DOI propuesto (verificado en doi2bib)</dt>
+      <dd class="mono ok">{{ ref.doi_propuesto }}</dd>{% endif %}
+    <dt>Título / autor / año / journal (local)</dt>
+    <dd>{{ ref.titulo }}<br>{{ ref.autor }} · {{ ref.anio }} · {{ ref.journal }}</dd>
+    {% if ref.similitud is not None %}<dt>Similitud de título vs doi2bib</dt>
+    <dd>{{ ref.similitud }}</dd>{% endif %}
+    {% if ref.veredicto_bonsai %}<dt>Veredicto Bonsai (solo clasifica)</dt>
+    <dd class="mono">{{ ref.veredicto_bonsai }}</dd>{% endif %}
+  </dl>
+</div>
+
+{% if ref.candidatos %}
+<div class="panel">
+  <h2>Candidatos hallados por nombre</h2>
+  <table>
+    <tr><th>DOI</th><th>Fuente</th><th>Título</th><th>Autor</th><th>Año</th></tr>
+    {% for c in ref.candidatos %}
+    <tr>
+      <td class="mono">{{ c.doi }}</td><td>{{ c.fuente }}</td>
+      <td>{{ c.titulo|default:"—" }}</td><td>{{ c.autor|default:"—" }}</td>
+      <td>{{ c.anio|default:"—" }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+{% if ref.doi2bib_bibtex %}
+<div class="panel">
+  <h2>BibTeX devuelto por doi2bib.org</h2>
+  <pre>{{ ref.doi2bib_bibtex }}</pre>
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2>Entrada original del .bib</h2>
+  <pre>@{{ ref.tipo }}{ {{ ref.clave }},{{ ref.cuerpo }}</pre>
+</div>
+{% endblock %}

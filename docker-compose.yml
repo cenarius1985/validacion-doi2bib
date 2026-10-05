@@ -1,0 +1,34 @@
+name: validacion-doi2bib
+
+services:
+  web:
+    build: .
+    image: validacion-doi2bib:local
+    container_name: validacion-doi2bib-web
+    restart: unless-stopped
+    ports:
+      - "8090:8000"
+    environment:
+      # Bonsai: LLM local del compose `ollamaLocal` (puerto host 4687).
+      # Desde el contenedor se alcanza vía host.docker.internal (Docker Desktop).
+      - BONSAI_BASE_URL=${BONSAI_BASE_URL:-http://host.docker.internal:4687/v1}
+      - BONSAI_MODEL=${BONSAI_MODEL:-ternary-bonsai-8b}
+      - BONSAI_TIMEOUT=${BONSAI_TIMEOUT:-180}
+      # Pestañas doi2bib en paralelo y cortesía con el servicio.
+      - DOI2BIB_TABS=${DOI2BIB_TABS:-10}
+      - DOI2BIB_MIN_INTERVALO=${DOI2BIB_MIN_INTERVALO:-1.0}
+      - DOI2BIB_REINTENTOS=${DOI2BIB_REINTENTOS:-2}
+      - DOI2BIB_PAUSA_RATE_LIMIT=${DOI2BIB_PAUSA_RATE_LIMIT:-60}
+      # Búsqueda por nombre.
+      - BUSCADOR_TABS=${BUSCADOR_TABS:-2}
+      - BUSCADOR_DELAY=${BUSCADOR_DELAY:-2.5}
+      - CANDIDATOS_A_VERIFICAR=${CANDIDATOS_A_VERIFICAR:-4}
+    volumes:
+      - datos:/app/data
+      - media:/app/media
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  datos:      # SQLite (lotes y referencias)
+  media:      # .bib subidos + informes generados
