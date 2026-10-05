@@ -1,0 +1,4 @@
+# LF obligatorio en scripts que corren dentro del contenedor Linux
+*.sh text eol=lf
+# El resto, normalización automática
+* text=auto
