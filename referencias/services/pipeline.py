@@ -219,16 +219,24 @@ def ejecutar_lote(lote_id):
 
 
 def preparar_reproceso(lote):
-    """Resetea lo reintentable (RATE_LIMIT/ERROR/MANUAL) para una nueva corrida."""
-    lote.referencias.filter(estado__in=["RATE_LIMIT", "ERROR"]).update(
-        estado="PENDIENTE", detalle="reintento")
-    lote.referencias.filter(estado="MANUAL").update(detalle="reintento búsqueda")
-    for r in lote.referencias.filter(estado__in=["RATE_LIMIT", "ERROR", "MANUAL"]):
-        if not r.doi:
+    """Resetea lo reintentable (RATE_LIMIT/ERROR/MANUAL) para una nueva corrida.
+
+    Regla de destino: con DOI y RATE_LIMIT/ERROR -> PENDIENTE (fase A);
+    MANUAL con DOI -> BROKEN (re-búsqueda); sin DOI -> SIN_DOI (fase B).
+    TODO en un solo bucle: un .update() masivo previo cambiaría los estados
+    y el filtro posterior no encontraría las filas (bug corregido 2026-10-05).
+    """
+    qs = (lote.referencias.filter(estado__in=["RATE_LIMIT", "ERROR", "MANUAL"])
+          | lote.referencias.filter(estado="PENDIENTE", doi=""))
+    for r in qs:
+        if r.estado == "MANUAL":
+            r.estado = "BROKEN" if r.doi else "SIN_DOI"
+        elif not r.doi:
             r.estado = "SIN_DOI"
-        elif r.estado == "MANUAL":
-            r.estado = "BROKEN"
-        r.save(update_fields=["estado"])
+        else:
+            r.estado = "PENDIENTE"
+        r.detalle = (r.detalle + " | reintento").lstrip(" |")
+        r.save(update_fields=["estado", "detalle"])
     lote.estado = "pendiente"
     lote.save(update_fields=["estado"])
 
