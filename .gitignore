@@ -5,3 +5,6 @@ media/
 .env
 db.sqlite3
 *.log
+_export_*.txt
+_*.bib
+_err.html
