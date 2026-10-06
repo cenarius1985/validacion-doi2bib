@@ -5,6 +5,11 @@
 llegue al `.bib` final, con un proceso trazable, auditable y con política
 explícita de reintentos, eliminación y reportes.
 
+> Docs complementarios: [`ARQUITECTURA.md`](ARQUITECTURA.md) (cómo es por
+> dentro), [`REGLAS-NEGOCIO.md`](REGLAS-NEGOCIO.md) (las 18 reglas con sus
+> umbrales) y [`RUNBOOK-RETROACTIVO.md`](RUNBOOK-RETROACTIVO.md) (cómo se
+> construyó, fase por fase).
+
 ---
 
 ## 1. Qué garantiza el sistema — y qué NO

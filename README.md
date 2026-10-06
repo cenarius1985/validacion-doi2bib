@@ -167,14 +167,14 @@ docker compose exec web python manage.py validar --lote 1 --reprocesar
 - **Anti-invención**: ningún DOI entra al `corregido.bib` sin haberse
   resuelto antes en una de esas fuentes.
 
-📚 **Runbook completo** — flujos de decisión, política de reintentos y
-eliminación, riesgos residuales evaluados y plan de mejora por fases:
-[`docs/RUNBOOK-VALIDACION.md`](docs/RUNBOOK-VALIDACION.md).
-F2 y F3 implementadas (2026-10-06): doble confirmación independiente
-(OpenAlex) de toda aceptación no exacta, rechazo de erratas/correcciones,
-preferencia editorial sobre arXiv, lista blanca de claves, golden tests de
-regresión (17 casos reales), métricas de calidad y export de evidencia
-JSON por lote.
+## Documentación
+
+| Doc | Contenido |
+|---|---|
+| [`docs/RUNBOOK-VALIDACION.md`](docs/RUNBOOK-VALIDACION.md) | Operación: garantías y límites, flujos de decisión, reintentos, eliminación, cómo auditar los reportes, riesgos residuales R1-R9 y plan de mejora (F2/F3/F4 ya implementadas) |
+| [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) | Arquitectura técnica: contenedores, módulos, modelo de datos, umbrales y configuración |
+| [`docs/REGLAS-NEGOCIO.md`](docs/REGLAS-NEGOCIO.md) | Las 18 reglas vigentes con su motivación exacta y dónde están implementadas |
+| [`docs/RUNBOOK-RETROACTIVO.md`](docs/RUNBOOK-RETROACTIVO.md) | Runbook retroactivo: cómo se construyó la aplicación por fases (desarrollo no tradicional guiado por incidentes reales), con lecciones y cómo replicarlo en otro dominio |
 - **Manda el nombre, y lo no verificable se elimina**: si el título no
   coincide con lo que trae el DOI, el DOI está mal — se re-busca en la web
   por el NOMBRE, se verifica el DOI real en doi2bib/Crossref y se conserva
