@@ -12,15 +12,30 @@ propuesto fue verificado antes en doi2bib (título coincidente determinista).
 
 ## Puesta en marcha
 
+> Esta rama (`main-externo`) espera un **LLM Bonsai ya corriendo en tu
+> host** (puerto 4687). Si prefieres que el LLM venga incluido en el
+> propio stack, usa la rama [`main`](https://github.com/cenarius1985/validacion-doi2bib)
+> (todo en uno).
+
+La forma más fácil, con Python 3 y Docker Desktop instalados:
+
+```bash
+python coordinador.py            # levanta, espera y abre tu navegador
+python coordinador.py --detener  # detener (los datos persisten)
+```
+
+O de forma manual, solo con Docker:
+
 ```bash
 docker compose up -d --build
 # abre http://localhost:8090
 ```
 
-Opcional (recomendado): levantar el LLM Bonsai del repo `ollamaLocal`:
+El LLM Bonsai externo (recomendado): levanta el servicio `bonsai` de tu
+repo local `ollamaLocal` (ajusta la ruta a tu equipo):
 
 ```bash
-docker compose -f C:/Users/fernando.ramirez/Documents/GitHub/ollamaLocal/docker-compose.yml up -d bonsai
+docker compose -f <ruta-a>/ollamaLocal/docker-compose.yml up -d bonsai
 curl http://localhost:4687/health   # debe responder ok
 ```
 
