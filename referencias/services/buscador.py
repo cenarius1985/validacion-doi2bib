@@ -133,6 +133,137 @@ def crossref_candidatos(titulo, autor=None, anio=None, maximo=5):
         return []
 
 
+_UA_CR = {"User-Agent": "validacion-doi2bib/1.0 (mailto:local@localhost)"}
+
+
+def _bibtex_de_crossref(m):
+    """Arma un cuerpo BibTeX-like con los metadatos oficiales de Crossref."""
+    def uno(campo):
+        return (m.get(campo) or [""])[0] if isinstance(m.get(campo), list) else m.get(campo) or ""
+    autores = " and ".join(
+        "%s, %s" % (a.get("family", ""), a.get("given", ""))
+        for a in m.get("author", []))
+    anio = ((m.get("issued", {}) or {}).get("date-parts") or [[None]])[0][0] or ""
+    campos = [
+        ("title", uno("title")),
+        ("author", autores),
+        ("year", str(anio)),
+        ("journal", uno("container-title")),
+        ("volume", m.get("volume", "")),
+        ("number", m.get("issue", "")),
+        ("pages", m.get("page", "")),
+    ]
+    return "@article{crossref,\n%s\n}" % ",\n".join(
+        "  %s = {%s}" % (c, v) for c, v in campos if v)
+
+
+def crossref_obtener(doi):
+    """Registro OFICIAL del DOI en Crossref como cuerpo BibTeX-like.
+
+    doi2bib es solo un front de Crossref: cuando no sirve un DOI que sí
+    existe (BROKEN falsos), este es el registro de autoridad. None si
+    Crossref tampoco lo tiene.
+    """
+    import urllib.parse
+    try:
+        r = requests.get(CROSSREF + "/" + urllib.parse.quote(doi, safe="/"),
+                         headers=_UA_CR, timeout=25)
+        if r.status_code != 200:
+            return None
+        return _bibtex_de_crossref(r.json().get("message", {}) or {})
+    except Exception:  # noqa: BLE001
+        return None
+
+
+_TITULOS_NO_ARTICULO = re.compile(
+    r"just a moment|attention required|access denied|checking your browser"
+    r"|redirecting|are you a robot|captcha|log ?in|sign in", re.I)
+
+
+async def _leer_metas(page):
+    return await page.evaluate(
+        """() => {
+            const g = (n) => {
+                const m = document.querySelector('meta[name="' + n + '"]');
+                return m ? m.content : '';
+            };
+            const autores = Array.from(
+                document.querySelectorAll('meta[name="citation_author"]'))
+                .map(m => m.content).join(' and ');
+            return {
+                t: g('citation_title') || document.title || '',
+                a: autores,
+                y: g('citation_publication_date')
+                   || g('citation_date') || g('citation_online_date') || '',
+                j: g('citation_journal_title')
+                   || g('citation_conference_title') || '',
+            };
+        }""")
+
+
+def _titulo_util(t):
+    """True si parece un título de artículo y no un challenge/placeholder
+    (Cloudflare 'Just a moment...', páginas de login, redirecciones)."""
+    if not t:
+        return False
+    if _TITULOS_NO_ARTICULO.search(t):
+        return False
+    return len([p for p in t.split() if len(p) >= 3]) >= 3
+
+
+async def metadatos_pagina(context, sem, doi):
+    """Abre https://doi.org/<doi> y lee los meta tags citation_* de la
+    página REAL del artículo (Wiley/Springer/Elsevier los publican).
+
+    Última instancia cuando ni doi2bib ni Crossref sirven el DOI pero el
+    navegador sí llega al artículo. Devuelve un cuerpo BibTeX-like o None.
+    """
+    async with sem:
+        page = await context.new_page()
+        try:
+            await page.goto("https://doi.org/" + doi, timeout=35000,
+                            wait_until="domcontentloaded")
+            metas = None
+            # Algunos editores (Wiley/Cloudflare) tardan en renderizar los
+            # meta tags: dos lecturas, la segunda tras espera mayor.
+            for espera in (2500, 9000):
+                await page.wait_for_timeout(espera)
+                try:
+                    metas = await _leer_metas(page)
+                except Exception:  # noqa: BLE001
+                    return None
+                if metas and _titulo_util(metas.get("t", "")):
+                    break
+                metas = None
+            if not metas:
+                return None
+            # citation_author viene "Given Family": invertir a "Family, Given"
+            autores = ""
+            if metas.get("a"):
+                partes = []
+                for a in metas["a"].split(" and "):
+                    trozos = a.rsplit(" ", 1)
+                    partes.append("%s, %s" % (trozos[-1], trozos[0])
+                                  if len(trozos) == 2 else a)
+                autores = " and ".join(partes)
+            m_anio = re.search(r"\d{4}", metas.get("y") or "")
+            campos = [
+                ("title", metas.get("t", "")),
+                ("author", autores),
+                ("year", m_anio.group(0) if m_anio else ""),
+                ("journal", metas.get("j", "")),
+            ]
+            return "@article{pagina,\n%s\n}" % ",\n".join(
+                "  %s = {%s}" % (c, v) for c, v in campos if v)
+        except Exception:  # noqa: BLE001
+            return None
+        finally:
+            try:
+                await page.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
 async def candidatos(context, sem, delay, titulo, autor, anio):
     """Fusiona candidatos de buscador web + Crossref.
 

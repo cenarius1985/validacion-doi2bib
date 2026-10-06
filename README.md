@@ -56,16 +56,39 @@ docker compose exec web python manage.py validar --lote 1 --reprocesar
 
 1. **En discrepancia, manda doi.org**: `corregido.bib` corrige
    año/journal/volumen/número/páginas/autores desde doi2bib, **jamás
-   renombra claves** (política del autor del paper, 2026-09-04). Solo
-   reconstruye entradas cuyo título coincide ≥0.90 (mismo paper); títulos
-   contradictorios quedan marcados para revisión.
+   renombra claves** (política del autor del paper, 2026-09-04, ampliada
+   2026-10-05: el objetivo es REPARAR referencias incorrectas). Se reparan
+   HALLADO/WARN y MISMATCH aceptados; títulos contradictorios quedan
+   marcados para revisión.
 2. **Cortesía con doi2bib**: intervalo global entre consultas
    (`DOI2BIB_MIN_INTERVALO`, default 1 s) compartido por todas las pestañas;
    ante "Too many requests" todos los workers pausan
    (`DOI2BIB_PAUSA_RATE_LIMIT`, default 60 s) y reintenta.
-3. **Bonsai solo clasifica**: prompts con respuesta JSON estricta y
-   prohibición de inventar; la aceptación final siempre es determinista
-   contra doi2bib.
+3. **Bonsai valida lo que no es coincidencia exacta** (2026-10-05): la
+   puerta principal sigue siendo determinista (título ≥0.90 + año igual +
+   autores coincidentes; el año ±1 cuenta como print-vs-online y los
+   subtítulos añadidos/quitados se toleran). Lo que falla por poco
+   (título ≥0.60, año ±1, autores compatibles, solapamiento de palabras
+   ≥0.60/0.55) lo adjudica Bonsai: si es el mismo trabajo se acepta y se
+   repara con campos de doi2bib. Todo DOI aceptado resolvió ANTES en una
+   fuente de autoridad; Bonsai nunca genera datos (respuesta JSON estricta).
+4. **Cascada de autoridad para DOI "rotos"** (2026-10-06): si doi2bib.org
+   no sirve un DOI, se consulta el registro oficial de
+   **api.crossref.org/works/<doi>** y, en última instancia, la **página
+   real del artículo** vía doi.org con Playwright (meta tags `citation_*`;
+   Cloudflare u otras protecciones se detectan y descartan). Varios
+   "BROKEN" eran falsos. Si el DOI original resuelve y el título coincide,
+   el año mal citado del .bib se corrige según doi2bib (el DOI manda).
+5. **DOI que apunta a otro trabajo**: los MISMATCH se re-buscan por nombre
+   (fase B) para proponer el DOI correcto, y el *Reprocesar* los reincluye
+   junto a RATE_LIMIT/ERROR/MANUAL/BROKEN.
+6. **Deduplicación por DOI** (2026-10-06): el DOI es el ÚNICO identificador
+   único válido para quitar repetidos (política del autor); nunca se
+   deduplica por título/autor. Se compara el DOI final (el propio o el
+   hallado y verificado, en minúsculas). De cada grupo sobrevive la entrada
+   mejor clasificada; las repetidas se marcan 🔁 DUPLICADO y **se eliminan
+   de `corregido.bib`** (el original no se toca). El dedupe corre al final
+   del lote y también al crearlo (para no verificar el mismo DOI dos veces).
 
 ## Variables (ver `.env.example`)
 

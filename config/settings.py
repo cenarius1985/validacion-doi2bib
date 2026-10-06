@@ -87,6 +87,9 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 20 * 1024 * 1024
 BONSAI_BASE_URL = os.environ.get("BONSAI_BASE_URL", "http://host.docker.internal:4687/v1")
 BONSAI_MODEL = os.environ.get("BONSAI_MODEL", "ternary-bonsai-8b")
 BONSAI_TIMEOUT = int(os.environ.get("BONSAI_TIMEOUT", "180"))
+# Llamadas concurrentes máximas al LLM: sin límite, un lote grande (50+ refs
+# en fase B) satura el host y el propio engine de Docker (bug real 2026-10-05).
+BONSAI_CONCURRENCIA = int(os.environ.get("BONSAI_CONCURRENCIA", "4"))
 
 DOI2BIB_TABS = int(os.environ.get("DOI2BIB_TABS", "10"))
 DOI2BIB_MIN_INTERVALO = float(os.environ.get("DOI2BIB_MIN_INTERVALO", "1.0"))

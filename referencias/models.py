@@ -46,14 +46,15 @@ class Referencia(models.Model):
         ("BROKEN", "DOI roto"),
         ("SIN_DOI", "Sin DOI"),
         ("HALLADO", "DOI hallado"),
+        ("DUPLICADO", "Duplicado por DOI"),
         ("MANUAL", "Revisar a mano"),
         ("RATE_LIMIT", "Rate limit"),
         ("ERROR", "Error"),
     ]
     ICONOS = {
         "PENDIENTE": "⬜", "OK": "✅", "WARN": "⚠️", "MISMATCH": "❌",
-        "BROKEN": "⛔", "SIN_DOI": "➖", "HALLADO": "🔎", "MANUAL": "🖐️",
-        "RATE_LIMIT": "⏳", "ERROR": "❓",
+        "BROKEN": "⛔", "SIN_DOI": "➖", "HALLADO": "🔎", "DUPLICADO": "🔁",
+        "MANUAL": "🖐️", "RATE_LIMIT": "⏳", "ERROR": "❓",
     }
     lote = models.ForeignKey(Lote, on_delete=models.CASCADE,
                              related_name="referencias")

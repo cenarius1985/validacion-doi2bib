@@ -16,7 +16,7 @@ import requests
 from django.conf import settings
 
 
-def _post_chat(system, user, timeout=None):
+def _post_chat(system, user, timeout=None, max_tokens=None):
     try:
         r = requests.post(
             settings.BONSAI_BASE_URL.rstrip("/") + "/chat/completions",
@@ -27,7 +27,9 @@ def _post_chat(system, user, timeout=None):
                     {"role": "user", "content": user},
                 ],
                 "temperature": 0.2,
-                "max_tokens": 500,
+                # El análisis paso a paso de adjudicar_borde consume tokens
+                # antes del JSON: 500 se quedaba corto y cortaba la respuesta.
+                "max_tokens": max_tokens or 500,
                 "stream": False,
             },
             timeout=timeout or settings.BONSAI_TIMEOUT,
@@ -113,21 +115,65 @@ def rankear_candidatos(ref, candidatos):
 
 
 def adjudicar_borde(ref, bibtex_doi2bib, similitud, diferencias):
-    """Para casos dudosos (similitud 0.85-0.92) decide WARN o MISMATCH.
+    """Para casos sin coincidencia exacta decide si es el MISMO trabajo.
 
+    Se usa en dos sitios: (a) fase A, veredictos WARN/MISMATCH dudosos;
+    (b) fase B, candidatos "cercanos" que la puerta determinista no aceptó.
     Devuelve dict(veredicto, motivo) o None. El veredicto NUNCA crea datos:
-    solo degrada/mejora la clasificación con argumentos.
+    solo reclasifica; todo DOI aceptado ya resolvió en doi2bib.org.
+
+    La evidencia (autores comunes, diferencia de años) se pre-calcula aquí
+    de forma determinista: el modelo pequeño acierta mucho más clasificando
+    diferencias ya enumeradas que parseando BibTeX crudo.
     """
+    from . import bib as _bib
+    ap_loc = _bib.apellidos(ref.get("autor", ""))
+    ap_rem = _bib.apellidos(_bib.valor_campo(bibtex_doi2bib, "author") or "")
+    comunes = sorted(ap_loc & ap_rem) if ap_loc and ap_rem else []
+    t_rem = _bib.valor_campo(bibtex_doi2bib, "title") or ""
+    s_loc, s_rem = _bib.solapamiento_palabras(ref.get("titulo", ""), t_rem)
+    y_loc = _bib.anio_de(ref.get("anio", ""))
+    y_rem = _bib.anio_de(_bib.valor_campo(bibtex_doi2bib, "year") or "",
+                         _bib.valor_campo(bibtex_doi2bib, "issued") or "")
+    dif_anio = ""
+    if y_loc and y_rem and y_loc != y_rem:
+        try:
+            dif_anio = "%s vs %s (diferencia %d)" % (y_loc, y_rem,
+                                                     abs(int(y_loc) - int(y_rem)))
+        except ValueError:
+            dif_anio = "%s vs %s" % (y_loc, y_rem)
+
     user = (
         "¿Estas dos referencias bibliograficas son el MISMO trabajo?\n\n"
-        f"LOCAL: {json.dumps(ref, ensure_ascii=False)}\n"
-        f"DOI2BIB (autoridad): {bibtex_doi2bib[:900]}\n"
+        f"TITULO LOCAL: {ref.get('titulo', '')}\n"
+        f"TITULO DOI2BIB: {t_rem}\n"
+        f"Solapamiento de palabras del titulo: local {s_loc:.2f} / doi2bib "
+        f"{s_rem:.2f} (altos = mismas palabras, p.ej. solo cambia un "
+        "subtitulo; bajo en un lado = un titulo esta contenido en otro y "
+        "puede ser un trabajo distinto, p.ej. un capitulo o una resena)\n"
+        f"APELLIDOS EN COMUN: {comunes or 'ninguno'} "
+        f"(local: {sorted(ap_loc)}; doi2bib: {sorted(ap_rem)})\n"
+        f"ANO LOCAL: {y_loc or '?'}   ANO DOI2BIB: {y_rem or '?'} "
+        f"{('  DIFIEREN ' + dif_anio + ' = cambio MENOR, online vs impresa') if dif_anio else '(iguales)'}\n"
         f"Similitud de titulo calculada: {similitud:.3f}\n"
-        f"Diferencias detectadas: {diferencias}\n\n"
+        f"Diferencias detectadas por el comparador: {diferencias}\n\n"
+        "Ya verificado antes de consultarte (NO lo uses como evidencia en "
+        "contra): los autores son compatibles"
+        f"{' (apellidos en comun: ' + ', '.join(comunes) + ')' if comunes else ''}"
+        f" y el ano difiere a lo sumo en 1{' (' + dif_anio + ')' if dif_anio else ''}, "
+        "ambos son cambios MENORES que no cambian la identidad de un trabajo.\n\n"
+        "Tu unica decision: ¿la diferencia de TITULO es un cambio menor "
+        "(puntuacion, mayusculas/acentos, subtitulo anadido o quitado, "
+        "abreviaturas, palabras recortadas) o revela OTRO trabajo distinto "
+        "(otro metodo, otra parte del cuerpo, otra poblacion, 'part 2', "
+        "titulo sustancialmente diferente)?\n\n"
+        "REGLA: con autores compatibles y ano ±1, responde 'mismo' salvo "
+        "evidencia clara de un trabajo distinto en el titulo. Si no puedes "
+        "decidir, 'indeciso'.\n\n"
         'Responde: {"veredicto": "mismo" | "distinto" | "indeciso", '
         '"motivo": "<explicacion breve en espanol>"}'
     )
-    contenido = _post_chat(SYSTEM, user)
+    contenido = _post_chat(SYSTEM, user, max_tokens=900, timeout=None)
     v = _json_de_respuesta(contenido)
     if not v or v.get("veredicto") not in ("mismo", "distinto", "indeciso"):
         return None
