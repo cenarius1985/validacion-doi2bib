@@ -256,7 +256,28 @@ async def _procesar_busqueda(ref, context, sem_web, sem_tabs, cliente,
 # Calidad para elegir el sobreviviente de un grupo de duplicados.
 _CALIDAD = {"OK": 0, "WARN": 1, "HALLADO": 2, "MISMATCH": 3, "BROKEN": 4,
             "RATE_LIMIT": 5, "ERROR": 6, "MANUAL": 7, "SIN_DOI": 8,
-            "PENDIENTE": 9, "DUPLICADO": 10}
+            "PENDIENTE": 9, "ELIMINAR": 10, "DUPLICADO": 11}
+
+
+def _marcar_eliminables(lote):
+    """Cierre de la política del autor (2026-10-06): si tras la búsqueda
+    por NOMBRE no hay ninguna coincidencia verificable, la referencia está
+    mal — probable alucinación — y se ELIMINA de corregido.bib (el
+    original no se toca; el informe la lista para revisión). Cubre las
+    MANUAL/MISMATCH que sobrevivieron al reintento y las SIN_DOI cuya
+    búsqueda por nombre no arrojó candidatos."""
+    qs = (lote.referencias.filter(estado__in=["MANUAL", "MISMATCH"])
+          | lote.referencias.filter(estado="SIN_DOI",
+                                    detalle__icontains="sin candidatos"))
+    n = 0
+    for r in qs:
+        r.estado = "ELIMINAR"
+        r.detalle = ((r.detalle + " | ") if r.detalle else "") + \
+            ("sin coincidencia verificable por nombre: probable referencia "
+             "inválida (alucinación); eliminada de corregido.bib")
+        r.save(update_fields=["estado", "detalle"])
+        n += 1
+    return n
 
 
 def _doi_final(ref):
@@ -300,6 +321,34 @@ def deduplicar(lote):
 
 
 # ------------------------------------------------------------------- orquesta
+
+async def _reintentar_por_nombre(lote, refs, context, sem_web, sem_tabs,
+                                 cliente, bonsai_on, sem_bonsai):
+    """Cierre para MANUAL/MISMATCH con DOI: manda el NOMBRE.
+
+    Si el título no coincide con lo que trae el DOI, el DOI está mal: se
+    re-busca en la web POR EL NOMBRE (búsqueda fresca, no los candidatos
+    viejos), se verifica cada candidato en la cascada doi2bib → Crossref →
+    página real y se conserva lo que traiga el DOI CORRECTO (fase B
+    estándar, con más candidatos verificados). Lo que no encuentre un DOI
+    verificable queda en MANUAL para revisión humana — jamás se adopta el
+    DOI equivocado (política del autor, 2026-10-06).
+    """
+    pendientes = [r for r in refs
+                  if r.estado in ("MANUAL", "MISMATCH") and r.doi]
+    if not pendientes:
+        return 0
+    for r in pendientes:
+        r.estado = "MISMATCH"   # el DOI apuntaba a otro trabajo
+        r.candidatos = []       # fuerza búsqueda fresca por el nombre local
+        await _db(r.save, update_fields=["estado", "candidatos"])
+    await asyncio.gather(*[
+        _procesar_busqueda(r, context, sem_web, sem_tabs, cliente, bonsai_on,
+                           lote, settings.BUSCADOR_DELAY,
+                           settings.CANDIDATOS_A_VERIFICAR + 4, sem_bonsai)
+        for r in pendientes])
+    return sum(1 for r in pendientes if r.estado == "HALLADO")
+
 
 async def _correr(lote_id):
     lote = await _db(Lote.objects.get, pk=lote_id)
@@ -352,8 +401,25 @@ async def _correr(lote_id):
                                        settings.CANDIDATOS_A_VERIFICAR,
                                        sem_bonsai)
                     for r in fase_b])
+
+        # Fase de cierre para MANUAL/MISMATCH con DOI: el DOI apuntaba a
+        # otro trabajo, así que manda el NOMBRE — re-búsqueda fresca en la
+        # web y verificación en doi2bib del DOI real (2026-10-06).
+        refs = await _db(lambda: list(
+            lote.referencias.filter(estado__in=["MANUAL", "MISMATCH"])
+            .exclude(doi="")))
+        n = await _reintentar_por_nombre(lote, refs, context, sem_web,
+                                         sem_tabs, cliente, bonsai_on,
+                                         sem_bonsai)
+        if n:
+            await _log(lote, "cierre por nombre: %d referencias recuperadas "
+                       "con su DOI real" % n)
         await browser.close()
 
+    n_elim = await _db(_marcar_eliminables, lote)
+    if n_elim:
+        await _log(lote, "cierre: %d referencias sin coincidencia verificable "
+                   "marcadas para eliminar (probable alucinación)" % n_elim)
     n_dups = await _db(deduplicar, lote)
     if n_dups:
         await _log(lote, "dedupe: %d duplicados por DOI (eliminados en "
@@ -452,6 +518,16 @@ def generar_informe(lote):
               "quitan de `corregido.bib` (el original no se toca).", ""]
         for r in dups:
             L.append("- `%s` — %s" % (r.clave, r.detalle))
+    elim = [r for r in refs if r.estado == "ELIMINAR"]
+    if elim:
+        L += ["", "## Eliminadas: no verificables (probable alucinación)", "",
+              "La búsqueda por NOMBRE no halló ningún trabajo verificable "
+              "en doi2bib/Crossref: según la política del autor, se "
+              "eliminan de `corregido.bib`. **Revísalas** — si una es real "
+              "(p. ej. un libro sin DOI), re agrégala a mano.", ""]
+        for r in elim:
+            L.append("- `%s` — %s" % (r.clave,
+                                      (r.titulo or r.detalle)[:120]))
     por_clave = {}
     for r in refs:
         if r.estado != "DUPLICADO":
@@ -478,7 +554,8 @@ def generar_informe(lote):
     for r in refs:
         n[r.estado] = n.get(r.estado, 0) + 1
     orden = ["OK", "WARN", "MISMATCH", "BROKEN", "SIN_DOI", "HALLADO",
-             "DUPLICADO", "MANUAL", "RATE_LIMIT", "ERROR", "PENDIENTE"]
+             "DUPLICADO", "ELIMINAR", "MANUAL", "RATE_LIMIT", "ERROR",
+             "PENDIENTE"]
     L += ["", "**Resumen:** " + " · ".join(
         "%s %d %s" % (Referencia.ICONOS.get(k, ""), n[k], k)
         for k in orden if n.get(k))]
@@ -568,8 +645,9 @@ def generar_corregido(lote):
         cola = colas.get(e["clave"])
         r = cola.pop(0) if cola else None
         if r:
-            if r.estado == "DUPLICADO":
-                # Propuesta de eliminación: el repetido no entra al .bib.
+            if r.estado in ("DUPLICADO", "ELIMINAR"):
+                # Propuesta de eliminación: el repetido (mismo DOI) o la
+                # referencia no verificable no entran al .bib corregido.
                 continue
             reparar = False
             titulo_remoto = False

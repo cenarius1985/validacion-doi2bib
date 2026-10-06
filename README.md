@@ -158,6 +158,13 @@ docker compose exec web python manage.py validar --lote 1 --reprocesar
   challenges tipo Cloudflare se detectan y descartan).
 - **Anti-invención**: ningún DOI entra al `corregido.bib` sin haberse
   resuelto antes en una de esas fuentes.
+- **Manda el nombre, y lo no verificable se elimina**: si el título no
+  coincide con lo que trae el DOI, el DOI está mal — se re-busca en la web
+  por el NOMBRE, se verifica el DOI real en doi2bib/Crossref y se conserva
+  lo que traiga ese DOI correcto. Si aun así no hay coincidencia
+  verificable, la referencia se considera inválida (probable alucinación de
+  un asistente de escritura) y **sale de `corregido.bib`** (🗑️ ELIMINAR);
+  el informe la lista para revisión.
 
 ### Estados por referencia
 
@@ -170,6 +177,7 @@ docker compose exec web python manage.py validar --lote 1 --reprocesar
 | ➖ SIN_DOI | la entrada no trae DOI |
 | 🔎 HALLADO | DOI hallado por nombre y verificado |
 | 🔁 DUPLICADO | mismo DOI que otra entrada; eliminado de `corregido.bib` |
+| 🗑️ ELIMINAR | sin ninguna coincidencia verificable por nombre: probable alucinación; eliminada de `corregido.bib` |
 | 🖐️ MANUAL | con candidatos pero ninguno verificado (revisar a mano) |
 | ⏳ RATE_LIMIT | doi2bib cortó el ritmo; botón *Reprocesar* más tarde |
 | ❓ ERROR | fallo técnico (reintentar) |
