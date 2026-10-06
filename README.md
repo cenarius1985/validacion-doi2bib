@@ -1,35 +1,57 @@
 # Validador DOI2BIB
 
-Valida **una a una** las referencias de un `.bib` contra
-<https://www.doi2bib.org> con **10 pestañas en paralelo** (configurable),
-busca por nombre (Google → DuckDuckGo → Bing, más Crossref) las entradas sin
-DOI o con DOI roto, y usa el LLM local **Bonsai** solo para clasificar casos
-dudosos y rankear candidatos.
+![Docker](https://img.shields.io/badge/docker-compose-blue)
+![Python](https://img.shields.io/badge/python-3.10+-yellow)
+![LLM](https://img.shields.io/badge/LLM-Bonsai_8B_local-8A2BE2)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-**La navegación es siempre headless dentro del contenedor Docker: no se abre
-ninguna ventana de navegador en tu pantalla.** **Nada se inventa**: todo DOI
-propuesto fue verificado antes en doi2bib (título coincidente determinista).
+Valida, **repara y deduplica** las referencias de un archivo `.bib` contra
+[doi2bib.org](https://www.doi2bib.org) y el registro oficial de Crossref,
+con un **LLM local** (Bonsai 8B) que adjudica los casos sin coincidencia
+exacta. Todo corre en Docker, en tu máquina: **nada se inventa y nada sale
+de tu red** salvo las consultas bibliográficas.
 
-## Puesta en marcha (rama `todo-en-uno`: TODO incluido)
+![Pantalla de resultados](docs/img/02-resultados.png)
+
+## ¿Qué hace?
+
+1. **Verifica cada DOI** en doi2bib.org con 10 pestañas headless en
+   paralelo (Playwright). Si doi2bib no sirve un DOI, consulta el
+   **registro oficial de Crossref** y, como última instancia, abre **la
+   página real del artículo** vía doi.org para leer sus metadatos.
+2. **Compara** título, autores, año, journal, volumen y páginas con un
+   comparador tolerante (acentos LaTeX, subtítulos, año print-vs-online,
+   sufijos Jr/III, guiones unicode).
+3. **Bonsai (LLM local) adjudica** lo que no coincide exacto pero está
+   cerca: mismo trabajo con cambios menores → se acepta y se repara.
+   Nunca genera datos: todo DOI aceptado resolvió antes en una fuente de
+   autoridad.
+4. **Repara** el año, journal, volumen, páginas, autores y DOI en
+   `corregido.bib` usando doi2bib/Crossref como autoridad ("si hay dudas,
+   manda doi.org"). El `.bib` original **nunca** se modifica.
+5. **Deduplica por DOI** (el único identificador único válido) y
+   desambigua claves repetidas (`Li_2014` → `Li_2014b`).
+6. Busca **por nombre** (Google → DuckDuckGo → Bing + Crossref) el DOI de
+   las entradas sin DOI o con DOI roto, y lo verifica antes de proponerlo.
+
+## Instalación (todo en uno)
 
 ```bash
+git clone https://github.com/cenarius1985/validacion-doi2bib.git
+cd validacion-doi2bib
 docker compose up -d --build
 # abre http://localhost:8090
 ```
 
-Eso es todo: el compose de esta rama **incluye el LLM Bonsai dentro del
-mismo stack** (servicio `bonsai`, imagen oficial de llama.cpp). En el
+Eso es todo: el stack **incluye el LLM Bonsai** como otro servicio. En el
 primer arranque se descarga el modelo desde HuggingFace una única vez
 (`Ternary-Bonsai-8B-PQ2_0.gguf`, ~2 GB, queda persistido en el volumen
-`bonsai_models`; los arranques siguientes no vuelven a bajar nada). La
-inferencia es CPU (`-ngl 0`): no hace falta GPU.
+`bonsai_models`). La inferencia es CPU: no hace falta GPU.
 
 - Web: <http://localhost:8090> · Bonsai interno (debug): <http://localhost:4688>
-- Puertos ocupados: `WEB_PORT=9090 docker compose up -d --build`
-- Reintentar sin Bonsai o con otro modelo: ver variables en `.env.example`
-  (`BONSAI_BASE_URL`, `BONSAI_GGUF`, `BONSAI_HF_REPO`, `BONSAI_CTX`).
+- Puerto ocupado: `WEB_PORT=9090 docker compose up -d --build`
 
-**¿HuggingFace bloqueado en tu red?** Dos salidas:
+### ¿HuggingFace bloqueado en tu red?
 
 ```bash
 # Opción A: carpeta local con el GGUF (pendrive/mirror corporativo)
@@ -37,86 +59,137 @@ mkdir models && cp /ruta/a/Ternary-Bonsai-8B-PQ2_0.gguf models/
 BONSAI_MODELS_BIND=./models docker compose up -d --build
 
 # Opción B: copiarlo directo al volumen ya creado
-docker cp Ternary-Bonsai-8B-PQ2_0.gguf <contenedor-bonsai>:/models/
+docker cp Ternary-Bonsai-8B-PQ2_0.gguf validacion-doi2bib-bonsai-1:/models/
 docker compose restart bonsai
 ```
 
-Sin Bonsai el sistema funciona igual (veredictos LLM quedan vacíos): si el
-servicio `bonsai` está caído, la validación sigue determinista.
+Sin Bonsai el sistema funciona igual (los veredictos LLM quedan vacíos y
+la validación sigue siendo determinista): el servicio puede caerse sin
+afectar los resultados.
+
+<details>
+<summary><b>Variante: Bonsai externo (sin LLM en el stack)</b></summary>
+
+La rama [`main-externo`](https://github.com/cenarius1985/validacion-doi2bib/tree/main-externo)
+conserva la configuración original: el validador espera un Bonsai ya
+corriendo en el host (puerto 4687, p. ej. del compose `ollamaLocal`) vía
+`host.docker.internal`. Útil si ya tienes un LLM OpenAI-compatible y
+prefieres no duplicar el modelo.
+
+</details>
 
 ## Uso
 
-- **Web**: subir el `.bib` en el formulario → progreso en vivo → tabla con
-  estados, informe `doi_check_report.md` descargable y `corregido.bib`
-  (propuesta; el original nunca se toca).
-- **CLI (solo resultados, sin UI)**:
+Sube el `.bib` en el formulario y sigue el progreso en vivo. Al terminar:
+
+- **Tabla con estados** filtrable por chip (abajo), con el detalle de cada
+  verificación.
+- **`informe .md`**: informe descargable con todas las decisiones, los DOI
+  propuestos, lo aceptado por Bonsai y los duplicados eliminados.
+- **`corregido.bib`**: la propuesta reparada y deduplicada; tu original no
+  se toca.
+
+![Formulario de carga](docs/img/01-subir.png)
+![Deduplicación por DOI](docs/img/03-duplicados.png)
+![Detalle con veredicto de Bonsai](docs/img/04-referencia.png)
+
+También hay un modo CLI (sin UI):
 
 ```bash
 docker compose exec web python manage.py validar --bib /app/sample/muestra.bib
 docker compose exec web python manage.py validar --lote 1 --reprocesar
 ```
 
-## Estados por referencia
+## ¿Cómo funciona?
+
+```
+                    ┌──────────────────────────────────────────┐
+   .bib subido ────►│  web (Django)                            │
+                    │  1. parsea entradas + dedupe temprano    │
+                    │  2. FASE A: refs con DOI                 │
+                    │       doi2bib ─► Crossref ─► doi.org     │
+                    │  3. FASE B: sin DOI / roto / MISMATCH    │
+                    │       Google/DDG/Bing + Crossref         │
+                    │  4. comparador determinista (bib.py)     │
+                    │       exacto ────────────► acepta        │
+                    │       cercano ─► Bonsai adjudica         │
+                    │  5. dedupe por DOI + informe + corregido │
+                    └───────────────┬──────────────────────────┘
+                                    │ red interna de compose
+                             ┌──────▼──────┐
+                             │ bonsai      │  fork PrismML de
+                             │ llama.cpp   │  llama.cpp (GGUF
+                             │ CPU, 8B     │  ternario, 2 GB)
+                             └─────────────┘
+```
+
+- **La puerta de aceptación es determinista**: título ≥0.90 + autores
+  coincidentes + año igual (±1 cuenta como edición online vs impresa).
+- **Bonsai solo clasifica** los casos "cercanos" (título ≥0.60 con
+  palabras compartidas, autores compatibles, año ±1) usando evidencia
+  pre-calculada (apellidos en común, diferencia de años, solapamiento de
+  palabras). Su veredicto acepta o rechaza; **jamás crea un DOI**.
+- **Cascada de autoridad**: doi2bib.org → `api.crossref.org/works/<doi>`
+  → página real del artículo (meta tags `citation_*` con Playwright; los
+  challenges tipo Cloudflare se detectan y descartan).
+- **Anti-invención**: ningún DOI entra al `corregido.bib` sin haberse
+  resuelto antes en una de esas fuentes.
+
+### Estados por referencia
 
 | Estado | Significado |
 |---|---|
-| ✅ OK | doi2bib resolvió y todo coincide |
-| ⚠️ WARN | diferencia menor (journal/volumen abreviado, algún apellido) |
-| ❌ MISMATCH | título/autores/año contradictorios con doi.org |
-| ⛔ BROKEN | el DOI no resuelve (Not Found) |
+| ✅ OK | resolvió y todo coincide |
+| ⚠️ WARN | verificado con diferencias menores (ya reparadas en `corregido.bib`) |
+| ❌ MISMATCH | contradice a la autoridad y no se pudo aceptar |
+| ⛔ BROKEN | el DOI no resuelve en ninguna fuente |
 | ➖ SIN_DOI | la entrada no trae DOI |
-| 🔎 HALLADO | se halló el DOI por nombre y **fue verificado en doi2bib** |
-| 🖐️ MANUAL | hubo candidatos pero ninguno pasó la verificación (revisar) |
+| 🔎 HALLADO | DOI hallado por nombre y verificado |
+| 🔁 DUPLICADO | mismo DOI que otra entrada; eliminado de `corregido.bib` |
+| 🖐️ MANUAL | con candidatos pero ninguno verificado (revisar a mano) |
 | ⏳ RATE_LIMIT | doi2bib cortó el ritmo; botón *Reprocesar* más tarde |
 | ❓ ERROR | fallo técnico (reintentar) |
 
-## Políticas
+## Configuración (`.env.example`)
 
-1. **En discrepancia, manda doi.org**: `corregido.bib` corrige
-   año/journal/volumen/número/páginas/autores desde doi2bib, **jamás
-   renombra claves** (política del autor del paper, 2026-09-04, ampliada
-   2026-10-05: el objetivo es REPARAR referencias incorrectas). Se reparan
-   HALLADO/WARN y MISMATCH aceptados; títulos contradictorios quedan
-   marcados para revisión.
-2. **Cortesía con doi2bib**: intervalo global entre consultas
-   (`DOI2BIB_MIN_INTERVALO`, default 1 s) compartido por todas las pestañas;
-   ante "Too many requests" todos los workers pausan
-   (`DOI2BIB_PAUSA_RATE_LIMIT`, default 60 s) y reintenta.
-3. **Bonsai valida lo que no es coincidencia exacta** (2026-10-05): la
-   puerta principal sigue siendo determinista (título ≥0.90 + año igual +
-   autores coincidentes; el año ±1 cuenta como print-vs-online y los
-   subtítulos añadidos/quitados se toleran). Lo que falla por poco
-   (título ≥0.60, año ±1, autores compatibles, solapamiento de palabras
-   ≥0.60/0.55) lo adjudica Bonsai: si es el mismo trabajo se acepta y se
-   repara con campos de doi2bib. Todo DOI aceptado resolvió ANTES en una
-   fuente de autoridad; Bonsai nunca genera datos (respuesta JSON estricta).
-4. **Cascada de autoridad para DOI "rotos"** (2026-10-06): si doi2bib.org
-   no sirve un DOI, se consulta el registro oficial de
-   **api.crossref.org/works/<doi>** y, en última instancia, la **página
-   real del artículo** vía doi.org con Playwright (meta tags `citation_*`;
-   Cloudflare u otras protecciones se detectan y descartan). Varios
-   "BROKEN" eran falsos. Si el DOI original resuelve y el título coincide,
-   el año mal citado del .bib se corrige según doi2bib (el DOI manda).
-5. **DOI que apunta a otro trabajo**: los MISMATCH se re-buscan por nombre
-   (fase B) para proponer el DOI correcto, y el *Reprocesar* los reincluye
-   junto a RATE_LIMIT/ERROR/MANUAL/BROKEN.
-6. **Deduplicación por DOI** (2026-10-06): el DOI es el ÚNICO identificador
-   único válido para quitar repetidos (política del autor); nunca se
-   deduplica por título/autor. Se compara el DOI final (el propio o el
-   hallado y verificado, en minúsculas). De cada grupo sobrevive la entrada
-   mejor clasificada; las repetidas se marcan 🔁 DUPLICADO y **se eliminan
-   de `corregido.bib`** (el original no se toca). El dedupe corre al final
-   del lote y también al crearlo (para no verificar el mismo DOI dos veces).
+| Variable | Default | Descripción |
+|---|---|---|
+| `WEB_PORT` | `8090` | Puerto del host para la web |
+| `BONSAI_BASE_URL` | `http://bonsai:8080/v1` | Endpoint del LLM (interno) |
+| `BONSAI_MODEL` | `ternary-bonsai-8b` | Alias del modelo servido |
+| `BONSAI_GGUF` / `BONSAI_HF_REPO` | ver `.env.example` | Modelo y repo de HuggingFace |
+| `BONSAI_MODELS_BIND` | *(volumen)* | Carpeta local con el GGUF si HF está bloqueado |
+| `BONSAI_HOST_PORT` | `4688` | Puerto del host para debug del Bonsai |
+| `BONSAI_CONCURRENCIA` | `4` | Llamadas simultáneas al LLM |
+| `DOI2BIB_TABS` | `10` | Pestañas headless en paralelo |
+| `DOI2BIB_MIN_INTERVALO` | `1.0` s | Cortesía global entre consultas |
+| `DOI2BIB_PAUSA_RATE_LIMIT` | `60` s | Pausa ante "Too many requests" |
+| `BUSCADOR_TABS` / `BUSCADOR_DELAY` | `2` / `2.5` s | Búsqueda por nombre |
+| `CANDIDATOS_A_VERIFICAR` | `4` | Candidatos verificados por entrada |
 
-## Variables (ver `.env.example`)
+## Solución de problemas
 
-`DOI2BIB_TABS` (10) · `DOI2BIB_MIN_INTERVALO` (1.0 s) · `DOI2BIB_REINTENTOS`
-(2) · `DOI2BIB_PAUSA_RATE_LIMIT` (60 s) · `BONSAI_BASE_URL`
-(`http://host.docker.internal:4687/v1`) · `BONSAI_MODEL`
-(`ternary-bonsai-8b`) · `BUSCADOR_TABS` (2) · `BUSCADOR_DELAY` (2.5 s) ·
-`CANDIDATOS_A_VERIFICAR` (4).
+- **El modelo tarda en estar listo**: el contenedor `bonsai` queda
+  `health: starting` mientras carga el GGUF a RAM (1-2 min en CPU). La web
+  funciona desde ya con validación determinista.
+- **Muchos RATE_LIMIT**: baja `DOI2BIB_TABS` o sube `DOI2BIB_MIN_INTERVALO`;
+  luego pulsa *Reprocesar* (reintenta solo lo pendiente, reutilizando los
+  candidatos ya hallados).
+- **Red corporativa sin acceso a Google**: la búsqueda por nombre cae a
+  DuckDuckGo y Bing; Crossref siempre está disponible (API pública).
+- **Docker en otra arquitectura** (Apple Silicon): el validador es
+  multi-arquitectura; el binario del Bonsai es x64 (emula bajo Rosetta/QEMU
+  o compila el fork PrismML para arm64).
 
-## Documentación completa
+## Notas de seguridad
 
-En el vault Obsidian `documentacion-minsal`, carpeta
-`VALIDACION-DOI2BIB-MINSAL` (PRD, arquitectura, despliegue y runbook).
+Este proyecto está pensado para **uso local** (Docker en tu máquina). La
+configuracion por defecto incluye `DEBUG=1` y `ALLOWED_HOSTS=["*"]` por
+comodidad: **no lo expongas a internet** sin endurecerlo
+(`DJANGO_DEBUG=0`, un `DJANGO_SECRET_KEY` propio y un reverse proxy con
+auth). No hay telemetría, cuentas ni claves de API: `.env.example` solo
+trae configuración de arranque.
+
+## Licencia
+
+[MIT](LICENSE) © Fernando José Ramírez Sarmiento
