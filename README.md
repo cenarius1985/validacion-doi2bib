@@ -36,6 +36,30 @@ de tu red** salvo las consultas bibliográficas.
 
 ## Instalación (todo en uno)
 
+### Opción recomendada: un solo comando
+
+Necesitas [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+y Python 3. Luego:
+
+```bash
+git clone https://github.com/cenarius1985/validacion-doi2bib.git
+cd validacion-doi2bib
+python coordinador.py
+```
+
+El coordinador construye y levanta todo el stack (web + LLM Bonsai),
+**espera a que la app esté lista, abre tu navegador** y reporta cuando el
+modelo del LLM terminó de cargar. La próxima vez es instantáneo:
+
+```bash
+python coordinador.py            # levantar y abrir el navegador
+python coordinador.py --detener  # detener (datos y modelo persisten)
+python coordinador.py --puerto 9090    # otro puerto si el 8090 está ocupado
+python coordinador.py --no-navegador   # sin abrir el navegador
+```
+
+### Opción manual: solo Docker
+
 ```bash
 git clone https://github.com/cenarius1985/validacion-doi2bib.git
 cd validacion-doi2bib
@@ -43,7 +67,7 @@ docker compose up -d --build
 # abre http://localhost:8090
 ```
 
-Eso es todo: el stack **incluye el LLM Bonsai** como otro servicio. En el
+En ambos casos el stack **incluye el LLM Bonsai** como otro servicio. En el
 primer arranque se descarga el modelo desde HuggingFace una única vez
 (`Ternary-Bonsai-8B-PQ2_0.gguf`, ~2 GB, queda persistido en el volumen
 `bonsai_models`). La inferencia es CPU: no hace falta GPU.
