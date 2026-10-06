@@ -26,9 +26,13 @@ de tu red** salvo las consultas bibliográficas.
    cerca: mismo trabajo con cambios menores → se acepta y se repara.
    Nunca genera datos: todo DOI aceptado resolvió antes en una fuente de
    autoridad.
-4. **Repara** el año, journal, volumen, páginas, autores y DOI en
-   `corregido.bib` usando doi2bib/Crossref como autoridad ("si hay dudas,
-   manda doi.org"). El `.bib` original **nunca** se modifica.
+4. **Repara** el año, journal, volumen, páginas, autores, DOI **y la
+   clave** en `corregido.bib` usando doi2bib/Crossref como autoridad
+   ("si hay dudas, manda doi.org"). La entrada reparada adopta la clave
+   de doi2bib (p. ej. `Chang2015UTE` → `Chang2014`): una clave cambiada
+   te avisa que la entrada fue reescrita y hay que actualizar tu
+   `\cite` en el paper — el informe lista todos los cambios de clave.
+   El `.bib` original **nunca** se modifica.
 5. **Deduplica por DOI** (el único identificador único válido) y
    desambigua claves repetidas (`Li_2014` → `Li_2014b`).
 6. Busca **por nombre** (Google → DuckDuckGo → Bing + Crossref) el DOI de

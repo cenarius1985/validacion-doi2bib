@@ -424,8 +424,10 @@ async def _correr(lote_id):
     if n_dups:
         await _log(lote, "dedupe: %d duplicados por DOI (eliminados en "
                    "corregido.bib)" % n_dups)
-    await _db(generar_informe, lote)
+    # Orden importa: corregido calcula los cambios de clave y el informe
+    # los lista para revisar los \cite del paper.
     await _db(generar_corregido, lote)
+    await _db(generar_informe, lote)
     lote.estado = "finalizado"
     lote.terminado = timezone.now()
     await _db(lote.save)
@@ -528,6 +530,31 @@ def generar_informe(lote):
         for r in elim:
             L.append("- `%s` — %s" % (r.clave,
                                       (r.titulo or r.detalle)[:120]))
+    cambios = getattr(lote, "_cambios_clave", None)
+    if cambios is None:
+        # Regeneración tardía del informe sin corregido previo: recomputar
+        # (aproximado; el flujo canónico es corregido -> informe).
+        cambios = []
+        try:
+            entradas = bib.parsear_bib(Path(lote.archivo.path)
+                                       .read_text(encoding="utf-8",
+                                                  errors="replace"))
+        except OSError:
+            entradas = []
+        refs = {r.clave: r for r in refs}
+        for e in entradas:
+            r = refs.get(e["clave"])
+            if r and r.estado in ("WARN", "HALLADO", "MISMATCH") and r.doi2bib_bibtex:
+                aut = _clave_de_autoridad(r)
+                if aut and aut != e["clave"]:
+                    cambios.append((e["clave"], aut, r.estado))
+    if cambios:
+        L += ["", "## Claves reemplazadas — revisa tus \\cite{}", "",
+              "Las entradas reparadas adoptan la clave de doi2bib: una clave "
+              "cambiada avisa que la entrada fue reescrita y hay que "
+              "actualizarla en el paper.", ""]
+        for vieja, nueva, estado in cambios:
+            L.append("- `%s` → `%s` (%s)" % (vieja, nueva, estado))
     por_clave = {}
     for r in refs:
         if r.estado != "DUPLICADO":
@@ -614,21 +641,37 @@ def _aceptada_bonsai(r):
     return v.get("veredicto") == "mismo"
 
 
+def _clave_de_autoridad(ref):
+    """Clave que trae el BibTeX de la autoridad (doi2bib genera p. ej.
+    'ZhouWang2004'). None si el cuerpo es sintético nuestro (crossref/
+    página) o no tiene clave utilizable — ahí se conserva la local."""
+    m = re.match(r"@(\w+)\s*\{\s*([^,\s]+)\s*,", ref.doi2bib_bibtex or "")
+    if not m:
+        return None
+    clave = m.group(2).strip()
+    if clave.lower() in ("crossref", "pagina") or not clave:
+        return None
+    # saneo mínimo: la clave debe ser citable en LaTeX
+    clave = re.sub(r"\s+", "_", clave)
+    clave = re.sub(r"[^A-Za-z0-9_:.+/-]", "", clave)
+    return clave or None
+
+
 def generar_corregido(lote):
     """Propuesta de .bib corregido. El original JAMÁS se modifica.
 
-    Se REPARAN (campos de autoridad desde doi2bib.org):
+    Se REPARAN (todo desde doi2bib.org, incluyendo la CLAVE de la
+    autoridad — política del autor 2026-10-06: la clave cambiada es la
+    señal de que la entrada fue reescrita y hay que revisar el \\cite en
+    el paper):
       - HALLADO: se reescribe además el DOI propuesto.
       - WARN: verificado el mismo trabajo con discrepancias menores.
       - MISMATCH: solo si la similitud >=0.90 o Bonsai lo adjudicó como el
         mismo trabajo (si difiere más, queda para revisión manual).
-
-    Cada bloque del .bib se empareja con SU referencia por orden de
-    aparición (claves repetidas: Du_2013/Li_2014/Ma_2018 en el .bib real;
-    un dict por clave mezclaba bloques y perdía entradas buenas). Las
-    claves repetidas que SOBREVIVEN (trabajos distintos) se desambiguan
-    SOLO en la propuesta con sufijo b/c...: la 1ª aparición conserva la
-    clave — BibTeX hoy ignora la 2ª, así que ningún \\cite{} se rompe.
+    Las claves de autoridad sintéticas (crossref/página) no reemplazan:
+    ahí se conserva la local. Colisiones tras el reemplazo se resuelven
+    con sufijo b/c. Devuelve además la lista de cambios de clave, que el
+    informe lista para revisión.
     """
     try:
         texto = Path(lote.archivo.path).read_text(encoding="utf-8", errors="replace")
@@ -639,6 +682,7 @@ def generar_corregido(lote):
     for r in lote.referencias.order_by("orden"):
         colas.setdefault(r.clave, []).append(r)
     usadas = {}
+    cambios_clave = []
     trozos = []
     for e in entradas:
         bloque = texto[e["inicio"]:e["fin"]].rstrip()
@@ -659,11 +703,16 @@ def generar_corregido(lote):
                   and ((r.similitud or 0) >= bib.SIM_ACEPTA
                        or _aceptada_bonsai(r))):
                 reparar = True
-            # Clave repetida con trabajo distinto: desambiguar en la propuesta
-            n = usadas.get(e["clave"], 0) + 1
-            usadas[e["clave"]] = n
-            clave_out = e["clave"] if n == 1 else "%s%s" % (
-                e["clave"], chr(ord("a") + n - 1))
+            # Clave base: la de la autoridad si se repara con doi2bib;
+            # si no, la local. Desambiguación con sufijo b/c en colisiones.
+            base = e["clave"]
+            if reparar:
+                autoridad = _clave_de_autoridad(r)
+                if autoridad:
+                    base = autoridad
+            n = usadas.get(base, 0) + 1
+            usadas[base] = n
+            clave_out = base if n == 1 else "%s%s" % (base, chr(ord("a") + n - 1))
             if reparar:
                 # Aceptación por Bonsai con título no idéntico: doi2bib manda.
                 titulo_remoto = ((r.similitud or 0) < bib.SIM_ACEPTA
@@ -673,7 +722,10 @@ def generar_corregido(lote):
             elif clave_out != e["clave"]:
                 bloque = re.sub(r"(@\w+\s*\{\s*)[^,\n]+",
                                 r"\g<1>%s" % clave_out, bloque, count=1)
+            if clave_out != e["clave"]:
+                cambios_clave.append((e["clave"], clave_out, r.estado))
         trozos.append(bloque)
+    lote._cambios_clave = cambios_clave
     ruta = ruta_reportes(lote) / "corregido.bib"
     ruta.write_text("\n\n".join(trozos) + "\n", encoding="utf-8")
     return ruta
