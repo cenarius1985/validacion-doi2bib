@@ -28,6 +28,7 @@
 
   <p>
     <a class="boton" href="{% url 'referencias:informe' lote.pk %}">⬇ informe .md</a>
+    <a class="boton secundario" href="{% url 'referencias:evidencia' lote.pk %}">⬇ evidencia.json</a>
     <a class="boton secundario" href="{% url 'referencias:corregido' lote.pk %}">⬇ corregido.bib (propuesta)</a>
     {% if lote.estado in "finalizado,error" %}
     <form method="post" style="display:inline"

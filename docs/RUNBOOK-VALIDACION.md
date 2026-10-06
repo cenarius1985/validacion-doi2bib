@@ -290,32 +290,43 @@ lotes existentes (el reprocesado re-verifica con las reglas vigentes).
 
 ## 10. Plan de mejora
 
-### Fase 2 — endurecimiento (corto plazo)
-- **F2-1 Doble confirmación de no-exactos**: todo HALLADO con sim <0.90
-  exige una segunda verificación independiente (re-consulta a Crossref
-  comparando además journal y páginas). *Criterio: 0 HALLADO<0.90 sin
-  doble confirmación en el informe.*
-- **F2-2 Rechazo de no-artículos**: candidatos cuyo título/tipo contenga
-  Erratum, Corrigendum, Publisher Note, "Author accept manuscript" → no
-  aceptables como el trabajo citado.
-- **F2-3 Preprint vs publicado**: si el candidato es arXiv y existe
-  versión de editorial con mismo título → preferir la editorial.
-- **F2-4 Lista blanca**: claves protegidas de ELIMINAR (config web).
+### Fase 2 — endurecimiento ✅ IMPLEMENTADA 2026-10-06
+- **F2-1 Doble confirmación de no-exactos ✅**: toda aceptación sin
+  coincidencia exacta (fase A MISMATCH→WARN y fase B HALLADO con
+  sim <0.90) exige una segunda verificación INDEPENDIENTE (OpenAlex;
+  fallback Crossref) concordando título (solapamiento fuerte) y año ±1.
+  Si falla → el ascenso se rechaza. *Criterio cumplido: el informe
+  reporta "HALLADO<0.90 sin doble confirmación: 0" y lista excepciones.*
+- **F2-2 Rechazo de no-artículos ✅**: candidatos con título tipo
+  Erratum, Corrigendum, Publisher's note, Author accepted manuscript,
+  Retraction o Discussion → descartados siempre (`buscador.es_no_articulo`).
+- **F2-3 Preprint vs publicado ✅**: candidatos arXiv (10.48550) van al
+  final de la lista salvo que la cita sea arXiv → la editorial gana.
+- **F2-4 Lista blanca ✅**: `CLAVES_PROTEGIDAS` (env) — esas claves jamás
+  se marcan ELIMINAR y su bloque original se conserva en `corregido.bib`.
 
-### Fase 3 — verificación cruzada (mediano plazo)
-- **F3-1 OpenAlex como segunda fuente**: un HALLADO se considera sólido
-  cuando Crossref y OpenAlex concuerdan en título+autores+año.
-- **F3-2 Búsqueda fuzzy con autores** cuando el título no arroja nada.
-- **F3-3 Salud del buscador** reportada por lote (motores bloqueados).
-- **F3-4 Golden tests**: suite de regresión con casos reales del lote 5
-  (Köhler, Cui2023, kanis2009meta, Granke×3, Lu2023) que debe pasar
-  intacta en cada cambio de `bib.py`/`buscador.py`.
+### Fase 3 — verificación cruzada (parcial ✅ 2026-10-06)
+- **F3-1 OpenAlex como segunda fuente ✅**: `buscador.openalex_obtener`
+  alimenta la doble confirmación de F2-1; HALLADO no-exacto sólido =
+  fuente principal + OpenAlex de acuerdo.
+- **F3-2 Búsqueda fuzzy con autores** cuando el título no arroja nada —
+  ⏳ PENDIENTE.
+- **F3-3 Salud del buscador ✅**: bloqueos/fallos de motores se registran
+  por corrida (`buscador.resumen_salud()`), se anuncian en el log y en el
+  informe ("Salud de buscadores web").
+- **F3-4 Golden tests ✅**: `python tests/golden_test.py` — 17 casos de
+  regresión con los incidentes reales del proyecto (Köhler, Cui2023,
+  kanis2009meta, reseña Gonzalez-Woods, enciclopedia link2009, Lu2023,
+  año print/online). Ejecutar ANTES de cada cambio de `bib.py`/
+  `buscador.py`.
 
-### Fase 4 — métricas (largo plazo)
-- **F4-1 Panel de calidad por lote**: % verificable, aceptaciones Bonsai,
-  eliminadas, reintentos — tendencia entre lotes.
-- **F4-2 Export JSON de evidencia** por referencia (qué fuente respondió
-  qué y cuándo) para auditoría externa.
+### Fase 4 — métricas ✅ IMPLEMENTADA 2026-10-06
+- **F4-1 Panel de calidad por lote ✅**: el informe incluye "Calidad del
+  lote": % verificado pleno, DOI hallados, aceptaciones Bonsai (con y sin
+  doble confirmación) y excepciones sin doble confirmación.
+- **F4-2 Export JSON de evidencia ✅**: `lote/<id>/evidencia.json` — por
+  referencia: estado, DOI, similitud, veredicto Bonsai completo, detalle
+  y timestamp; para auditoría externa.
 
 ---
 
@@ -343,3 +354,7 @@ lotes existentes (el reprocesado re-verifica con las reglas vigentes).
 | 2026-10-06 | Si el título contradice al DOI, manda el NOMBRE: re-búsqueda y verificación del DOI real |
 | 2026-10-06 | Lo no verificable por nombre se elimina (probable alucinación), con lista de rescate en el informe |
 | 2026-10-06 | Las entradas reparadas adoptan la clave de doi2bib (la clave cambiada fuerza re-lectura del `\cite`) |
+| 2026-10-06 | F2: doble confirmación independiente (OpenAlex) obligatoria para toda aceptación no exacta |
+| 2026-10-06 | F2: erratas/correcciones/retracciones jamás se aceptan como el trabajo citado |
+| 2026-10-06 | F2: preferencia editorial sobre arXiv; lista blanca CLAVES_PROTEGIDAS |
+| 2026-10-06 | F3/F4: golden tests (17 casos), métricas por lote y evidencia.json |

@@ -95,8 +95,26 @@ async def _procesar_con_doi(ref, cliente, sem, bonsai_on, lote,
                 if v:
                     ref.veredicto_bonsai = v
                     if v.get("veredicto") == "mismo" and ref.estado == "MISMATCH":
-                        ref.estado = "WARN"
-                        ref.detalle += " | Bonsai: mismo trabajo (%s)" % v.get("motivo", "")
+                        # F2-1: sin coincidencia exacta, doble confirmación
+                        # con fuente independiente antes de ascender a WARN.
+                        if res["similitud"] < bib.SIM_ACEPTA:
+                            ok2, f2 = await asyncio.to_thread(
+                                buscador.confirmacion_independiente,
+                                ref.doi, bibtex)
+                            v["doble"] = f2 if ok2 else "no-disponible"
+                            ref.detalle += (" | doble confirmación %s: %s"
+                                            % (f2, "ok" if ok2
+                                               else "sin fuente"))
+                            if ok2 is False:
+                                ref.detalle += " (sigue MISMATCH)"
+                            else:
+                                ref.estado = "WARN"
+                                ref.detalle += (" | Bonsai: mismo trabajo "
+                                                "(%s)" % v.get("motivo", ""))
+                        else:
+                            ref.estado = "WARN"
+                            ref.detalle += (" | Bonsai: mismo trabajo (%s)"
+                                            % v.get("motivo", ""))
                     elif v.get("veredicto") == "distinto" and ref.estado != "MISMATCH":
                         ref.estado = "MISMATCH"
                         ref.detalle += " | Bonsai: trabajos distintos"
@@ -152,6 +170,12 @@ async def _procesar_busqueda(ref, context, sem_web, sem_tabs, cliente,
                     cands = ordenados
                     ref.veredicto_bonsai = {"ranking": v}
             ref.candidatos = cands[:12]
+            # F2-3: preferir la versión de editorial sobre arXiv (salvo que
+            # la cita SEA un arXiv): establo, arXiv al final.
+            if not (ref.doi or "").lower().startswith("10.48550/arxiv"):
+                cands = sorted(
+                    cands, key=lambda c: str(c.get("doi", ""))
+                    .lower().startswith("10.48550/arxiv"))
             aceptado, descartes, consultas_bonsai = None, [], 0
             for c in cands[:n_verificar]:
                 async with sem_tabs:
@@ -171,6 +195,13 @@ async def _procesar_busqueda(ref, context, sem_web, sem_tabs, cliente,
                         bibtex, fuente = cr, "Crossref"
                 if not bibtex:
                     descartes.append("%s: %s" % (c["doi"], rr["estado"]))
+                    continue
+                # F2-2: erratas/correcciones/retracciones JAMÁS son el
+                # trabajo citado, aunque el resto coincida.
+                t_cand = bib.valor_campo(bibtex, "title") or ""
+                if buscador.es_no_articulo(t_cand):
+                    descartes.append("%s: no-artículo (%s)" % (
+                        c["doi"], t_cand[:40]))
                     continue
                 if (c["doi"].lower() == (ref.doi or "").lower()
                         and estado_inicial == "MISMATCH"):
@@ -197,9 +228,27 @@ async def _procesar_busqueda(ref, context, sem_web, sem_tabs, cliente,
                             bonsai.adjudicar_borde, campos, bibtex,
                             res["similitud"], [res.get("motivo_cercano", "")])
                     if v and v.get("veredicto") == "mismo":
+                        # F2-1: aceptación NO exacta exige doble
+                        # confirmación con fuente independiente (OpenAlex;
+                        # fallback Crossref) concordando título y año.
+                        nota_doble = ""
+                        if res["similitud"] < bib.SIM_ACEPTA:
+                            ok2, f2 = await asyncio.to_thread(
+                                buscador.confirmacion_independiente,
+                                c["doi"], bibtex)
+                            if ok2 is False:
+                                descartes.append(
+                                    "%s: doble confirmación %s falló"
+                                    % (c["doi"], f2))
+                                continue
+                            v["doble"] = f2 if ok2 else "no-disponible"
+                            nota_doble = ("; doble confirmación %s: %s"
+                                          % (f2, "ok" if ok2 else "sin fuente"))
                         # El DOI resolvió (doi2bib/Crossref) y Bonsai adjudicó
                         # la equivalencia pese a diferencias menores.
                         aceptado = (c, rr, res, v, bibtex, fuente)
+                        if nota_doble:
+                            v["motivo"] = (v.get("motivo", "") + nota_doble)
                         break
                     if v:
                         descartes.append("%s: Bonsai %s" % (c["doi"],
@@ -265,12 +314,19 @@ def _marcar_eliminables(lote):
     mal — probable alucinación — y se ELIMINA de corregido.bib (el
     original no se toca; el informe la lista para revisión). Cubre las
     MANUAL/MISMATCH que sobrevivieron al reintento y las SIN_DOI cuya
-    búsqueda por nombre no arrojó candidatos."""
+    búsqueda por nombre no arrojó candidatos. F2-4: las claves de
+    CLAVES_PROTEGIDAS quedan a salvo (libros reales sin DOI, normas)."""
+    from django.conf import settings
     qs = (lote.referencias.filter(estado__in=["MANUAL", "MISMATCH"])
           | lote.referencias.filter(estado="SIN_DOI",
                                     detalle__icontains="sin candidatos"))
     n = 0
     for r in qs:
+        if r.clave in settings.CLAVES_PROTEGIDAS:
+            r.detalle = ((r.detalle + " | ") if r.detalle else "") + \
+                "clave protegida: no se elimina aunque no sea verificable"
+            r.save(update_fields=["detalle"])
+            continue
         r.estado = "ELIMINAR"
         r.detalle = ((r.detalle + " | ") if r.detalle else "") + \
             ("sin coincidencia verificable por nombre: probable referencia "
@@ -378,6 +434,7 @@ async def _correr(lote_id):
                     settings.BONSAI_MODEL))
         await _log(lote, "doi2bib: %d pestañas, intervalo global %.1fs" %
                    (lote.tabs, settings.DOI2BIB_MIN_INTERVALO))
+        buscador.reiniciar_salud()
 
         # Fase A: referencias con DOI pendientes de verificar
         fase_a = [r for r in refs if r.doi and r.estado == "PENDIENTE"]
@@ -414,6 +471,10 @@ async def _correr(lote_id):
         if n:
             await _log(lote, "cierre por nombre: %d referencias recuperadas "
                        "con su DOI real" % n)
+        salud = buscador.resumen_salud()
+        if salud:
+            await _log(lote, "salud buscadores web (F3-3): " + ", ".join(
+                "%s ×%d" % (k, v) for k, v in sorted(salud.items())))
         await browser.close()
 
     n_elim = await _db(_marcar_eliminables, lote)
@@ -586,6 +647,36 @@ def generar_informe(lote):
     L += ["", "**Resumen:** " + " · ".join(
         "%s %d %s" % (Referencia.ICONOS.get(k, ""), n[k], k)
         for k in orden if n.get(k))]
+
+    # F4-1: métricas de calidad del lote.
+    total = len(refs)
+    utiles = total - n.get("DUPLICADO", 0) - n.get("ELIMINAR", 0)
+    if utiles > 0:
+        plenas = n.get("OK", 0) + n.get("WARN", 0)
+        bonsai = [r for r in refs if _aceptada_bonsai(r)]
+        fragiles = [r for r in refs if r.estado == "HALLADO"
+                    and (r.similitud or 0) < bib.SIM_ACEPTA]
+        sin_doble = [r for r in fragiles
+                     if not (isinstance(r.veredicto_bonsai, dict)
+                             and r.veredicto_bonsai.get("doble"))]
+        L += ["", "**Calidad del lote (F4-1):** "
+              "verificadas plenas %d/%d (%.0f%%) · DOI hallados %d · "
+              "aceptadas por Bonsai %d (con doble confirmación %d) · "
+              "HALLADO<0.90 sin doble confirmación: %d%s"
+              % (plenas, utiles, 100.0 * plenas / utiles, n.get("HALLADO", 0),
+                 len(bonsai), sum(1 for r in bonsai
+                                  if isinstance(r.veredicto_bonsai, dict)
+                                  and r.veredicto_bonsai.get("doble")
+                                  not in (None, "no-disponible")),
+                 len(sin_doble),
+                 (" → " + ", ".join(r.clave for r in sin_doble[:5]))
+                 if sin_doble else "")]
+
+    # F3-3: salud de los motores de búsqueda web en esta corrida.
+    salud = buscador.resumen_salud()
+    if salud:
+        L += ["", "**Salud de buscadores web (F3-3):** " + " · ".join(
+            "%s ×%d" % (k, v) for k, v in sorted(salud.items()))]
     if notas:
         L += ["", "## Notas de la corrida", ""] + [
             "- %s" % (x.split("] ", 1)[-1] if x.startswith("[") else x)
@@ -689,9 +780,12 @@ def generar_corregido(lote):
         cola = colas.get(e["clave"])
         r = cola.pop(0) if cola else None
         if r:
-            if r.estado in ("DUPLICADO", "ELIMINAR"):
+            if r.estado == "DUPLICADO" or (r.estado == "ELIMINAR" and
+                                           r.clave not in
+                                           settings.CLAVES_PROTEGIDAS):
                 # Propuesta de eliminación: el repetido (mismo DOI) o la
                 # referencia no verificable no entran al .bib corregido.
+                # (F2-4: una clave protegida se conserva aunque ELIMINAR.)
                 continue
             reparar = False
             titulo_remoto = False

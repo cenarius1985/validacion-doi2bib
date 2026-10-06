@@ -170,6 +170,11 @@ docker compose exec web python manage.py validar --lote 1 --reprocesar
 📚 **Runbook completo** — flujos de decisión, política de reintentos y
 eliminación, riesgos residuales evaluados y plan de mejora por fases:
 [`docs/RUNBOOK-VALIDACION.md`](docs/RUNBOOK-VALIDACION.md).
+F2 y F3 implementadas (2026-10-06): doble confirmación independiente
+(OpenAlex) de toda aceptación no exacta, rechazo de erratas/correcciones,
+preferencia editorial sobre arXiv, lista blanca de claves, golden tests de
+regresión (17 casos reales), métricas de calidad y export de evidencia
+JSON por lote.
 - **Manda el nombre, y lo no verificable se elimina**: si el título no
   coincide con lo que trae el DOI, el DOI está mal — se re-busca en la web
   por el NOMBRE, se verifica el DOI real en doi2bib/Crossref y se conserva

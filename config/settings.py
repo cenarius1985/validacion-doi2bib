@@ -91,6 +91,12 @@ BONSAI_TIMEOUT = int(os.environ.get("BONSAI_TIMEOUT", "180"))
 # en fase B) satura el host y el propio engine de Docker (bug real 2026-10-05).
 BONSAI_CONCURRENCIA = int(os.environ.get("BONSAI_CONCURRENCIA", "4"))
 
+# F2-4: claves protegidas — jamás se marcan ELIMINAR aunque no sean
+# verificables (libros reales sin DOI, normas, software). Separadas por coma.
+CLAVES_PROTEGIDAS = {c.strip() for c in
+                     os.environ.get("CLAVES_PROTEGIDAS", "").split(",")
+                     if c.strip()}
+
 DOI2BIB_TABS = int(os.environ.get("DOI2BIB_TABS", "10"))
 DOI2BIB_MIN_INTERVALO = float(os.environ.get("DOI2BIB_MIN_INTERVALO", "1.0"))
 DOI2BIB_REINTENTOS = int(os.environ.get("DOI2BIB_REINTENTOS", "2"))

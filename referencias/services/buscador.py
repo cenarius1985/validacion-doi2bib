@@ -70,7 +70,9 @@ async def _bing(page, consulta):
 
 
 async def buscar_en_web(context, consulta, sem, delay):
-    """Google → DuckDuckGo → Bing. Devuelve (dois[], fuentes[])."""
+    """Google → DuckDuckGo → Bing. Devuelve (dois[], fuentes[]).
+    Los bloqueos/fallos de cada motor quedan registrados para la salud
+    del lote (F3-3: reiniciar_salud() / resumen_salud())."""
     async with sem:
         # el user-agent ya viene en el context (lo fija el pipeline)
         page = await context.new_page()
@@ -79,8 +81,11 @@ async def buscar_en_web(context, consulta, sem, delay):
             for motor in (_google, _duckduckgo, _bing):
                 try:
                     dois, fuente = await motor(page, consulta)
-                except Exception:  # noqa: BLE001
+                except Exception as e:  # noqa: BLE001
                     dois, fuente = [], f"{motor.__name__}_error"
+                    FALLOS_WEB.append(fuente)
+                if fuente == "google_bloqueado":
+                    FALLOS_WEB.append("google_bloqueado")
                 if dois:
                     todos.extend(dois)
                     fuentes.append(fuente)
@@ -99,6 +104,19 @@ async def buscar_en_web(context, consulta, sem, delay):
                 await page.close()
             except Exception:  # noqa: BLE001
                 pass
+
+
+# F3-3: registro de fallos de motores web de la corrida en curso.
+FALLOS_WEB = []
+
+
+def reiniciar_salud():
+    FALLOS_WEB.clear()
+
+
+def resumen_salud():
+    from collections import Counter
+    return dict(Counter(FALLOS_WEB))
 
 
 def crossref_candidatos(titulo, autor=None, anio=None, maximo=5):
@@ -134,6 +152,86 @@ def crossref_candidatos(titulo, autor=None, anio=None, maximo=5):
 
 
 _UA_CR = {"User-Agent": "validacion-doi2bib/1.0 (mailto:local@localhost)"}
+
+
+def _invertir_autores(nombre_compuesto):
+    """'Given Family and Given2 Family2' -> 'Family, Given and ...'."""
+    partes = []
+    for a in (nombre_compuesto or "").split(" and "):
+        trozos = a.strip().rsplit(" ", 1)
+        partes.append("%s, %s" % (trozos[-1], trozos[0])
+                      if len(trozos) == 2 else a.strip())
+    return " and ".join(p for p in partes if p)
+
+
+def _cuerpo_bibtex(clave, titulo, autores, anio, journal):
+    campos = [("title", titulo), ("author", autores), ("year", str(anio or "")),
+              ("journal", journal)]
+    return "@article{%s,\n%s\n}" % (clave, ",\n".join(
+        "  %s = {%s}" % (c, v) for c, v in campos if v))
+
+
+# F2-2: estas "referencias" existen pero NO son el trabajo citado.
+NO_ARTICULO_RE = re.compile(
+    r"erratum|corrigendum|correction (?:to|for|of)|publisher'?s? note"
+    r"|author accept(?:ed)? manuscript|retraction (?:of|for|notice)"
+    r"|discussion (?:of|to)\b", re.I)
+
+
+def es_no_articulo(titulo):
+    """True si el título corresponde a una errata/corrección/retracción,
+    que jamás debe aceptarse como el trabajo citado."""
+    return bool(NO_ARTICULO_RE.search(titulo or ""))
+
+
+def openalex_obtener(doi):
+    """F3-1: registro INDEPENDIENTE del DOI en OpenAlex (segunda fuente que
+    no depende de Crossref). Cuerpo BibTeX-like o None."""
+    try:
+        r = requests.get(
+            "https://api.openalex.org/works/doi:" + doi.strip(),
+            params={"mailto": "local@localhost"}, timeout=25)
+        if r.status_code != 200:
+            return None
+        m = r.json()
+        autores = " and ".join(
+            (a.get("author", {}) or {}).get("display_name", "")
+            for a in m.get("authorships", [])[:20])
+        journal = ((m.get("primary_location", {}) or {}).get("source", {})
+                   or {}).get("display_name", "") or ""
+        return _cuerpo_bibtex("openalex", m.get("display_name", ""),
+                              _invertir_autores(autores),
+                              m.get("publication_year", ""), journal)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def confirmacion_independiente(doi, bibtex_aceptado):
+    """F2-1: segunda fuente independiente (OpenAlex; fallback Crossref)
+    debe concordar con lo aceptado: solapamiento fuerte de palabras del
+    título en ambos sentidos + año igual o ±1.
+
+    Devuelve (resultado, fuente): resultado True/False; (None, motivo) si
+    ninguna fuente independiente estuvo disponible."""
+    from . import bib
+    for getter, nombre in ((openalex_obtener, "OpenAlex"),
+                           (crossref_obtener, "Crossref")):
+        cuerpo = getter(doi)
+        if not cuerpo:
+            continue
+        t_acept = bib.valor_campo(bibtex_aceptado, "title") or ""
+        t_ind = bib.valor_campo(cuerpo, "title") or ""
+        s_loc, s_rem = bib.solapamiento_palabras(t_acept, t_ind)
+        y_acept = bib.anio_de(bib.valor_campo(bibtex_aceptado, "year"),
+                              bib.valor_campo(bibtex_aceptado, "issued"))
+        y_ind = bib.anio_de(bib.valor_campo(cuerpo, "year"),
+                            bib.valor_campo(cuerpo, "issued"))
+        anio_ok = not (y_acept and y_ind) or abs(int(y_acept) - int(y_ind)) <= 1
+        ok = (min(s_loc, s_rem) >= bib.SOLAPA_FUERTE
+              and bib.parecido_titulo(t_acept, t_ind) >= bib.SIM_SOLAPA_MIN
+              and anio_ok)
+        return ok, nombre
+    return None, "sin fuente independiente disponible"
 
 
 def _bibtex_de_crossref(m):

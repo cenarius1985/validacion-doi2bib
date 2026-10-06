@@ -8,6 +8,7 @@ from django.core.paginator import Paginator
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 
 from .forms import SubirBibForm
 from .models import Lote, Referencia
@@ -44,6 +45,26 @@ def index(request):
     return render(request, "referencias/index.html",
                   {"form": form, "pagina": pagina, "lotes": pagina.object_list,
                    "error": error})
+
+
+def evidencia(request, lote_id):
+    """F4-2: export JSON de evidencia por referencia (qué decidió el
+    sistema, con qué fuente y cuándo) para auditoría externa."""
+    lote = get_object_or_404(Lote, pk=lote_id)
+    refs = lote.referencias.order_by("orden")
+    return JsonResponse({
+        "lote": lote.pk,
+        "nombre": lote.nombre,
+        "generado": timezone.localtime().isoformat(),
+        "referencias": [{
+            "orden": r.orden, "clave": r.clave, "estado": r.estado,
+            "doi": r.doi, "doi_propuesto": r.doi_propuesto,
+            "titulo": r.titulo, "similitud": r.similitud,
+            "veredicto_bonsai": r.veredicto_bonsai,
+            "detalle": r.detalle,
+            "verificada": r.verificada.isoformat() if r.verificada else None,
+        } for r in refs],
+    })
 
 
 def eliminar_lote(request, lote_id):
