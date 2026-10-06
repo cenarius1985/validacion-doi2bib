@@ -7,6 +7,8 @@
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
   <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
+    <label>Nombre del proyecto o bibliografía (para reconocerlo al volver)</label>
+    {{ form.nombre }}
     <label>Archivo BibTeX (.bib, máx. 20 MB)</label>
     {{ form.archivo }}
     <label>Pestañas en paralelo contra doi2bib (1–20)</label>
@@ -26,21 +28,48 @@
 
 <div class="panel">
   <h2>Lotes</h2>
+  {% if messages %}
+    {% for m in messages %}<p class="{{ m.tags }}">{{ m }}</p>{% endfor %}
+  {% endif %}
   {% if lotes %}
   <table>
-    <tr><th>ID</th><th>Archivo</th><th>Estado</th><th>Progreso</th>
-        <th>Creado</th><th></th></tr>
+    <tr><th>ID</th><th>Proyecto</th><th>Archivo</th><th>Estado</th>
+        <th>Progreso</th><th>Creado</th><th></th></tr>
     {% for l in lotes %}
     <tr>
       <td>{{ l.pk }}</td>
-      <td>{{ l.nombre }}</td>
+      <td><a href="{% url 'referencias:lote' l.pk %}"><strong>{{ l.nombre }}</strong></a></td>
+      <td>{{ l.archivo.name|cut:"bibs/" }}</td>
       <td>{{ l.get_estado_display }}</td>
       <td>{{ l.procesadas }}/{{ l.total }}</td>
       <td>{{ l.creado|date:"d-m-Y H:i" }}</td>
-      <td><a href="{% url 'referencias:lote' l.pk %}">Ver resultados →</a></td>
+      <td>
+        <a href="{% url 'referencias:lote' l.pk %}">Ver →</a>
+        {% if l.estado != "en_curso" %}
+        <form method="post" action="{% url 'referencias:eliminar' l.pk %}"
+              style="display:inline"
+              onsubmit="return confirm('¿Eliminar el lote «{{ l.nombre|escapejs }}» (ID {{ l.pk }}) con sus {{ l.total }} referencias, informe y corregido? Esta acción no se puede deshacer.');">
+          {% csrf_token %}
+          <button type="submit" class="eliminar">🗑️</button>
+        </form>
+        {% else %}
+        <span title="No se puede eliminar mientras corre">⏳</span>
+        {% endif %}
+      </td>
     </tr>
     {% endfor %}
   </table>
+  {% if pagina.has_other_pages %}
+  <p class="paginador">
+    {% if pagina.has_previous %}
+      <a href="?page={{ pagina.previous_page_number }}">« anterior</a>
+    {% endif %}
+    Página {{ pagina.number }} de {{ pagina.paginator.num_pages }}
+    {% if pagina.has_next %}
+      <a href="?page={{ pagina.next_page_number }}">siguiente »</a>
+    {% endif %}
+  </p>
+  {% endif %}
   {% else %}
   <p style="color:var(--apagado)">Aún no hay lotes. Sube un .bib arriba o usa
   el comando <span class="mono">python manage.py validar --bib archivo.bib</span>.</p>

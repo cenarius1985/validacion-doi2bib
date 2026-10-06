@@ -12,5 +12,6 @@ urlpatterns = [
     path("lote/<int:lote_id>/reprocesar", views.reprocesar, name="reprocesar"),
     path("lote/<int:lote_id>/informe", views.informe, name="informe"),
     path("lote/<int:lote_id>/corregido.bib", views.corregido, name="corregido"),
+    path("lote/<int:lote_id>/eliminar", views.eliminar_lote, name="eliminar"),
     path("referencia/<int:ref_id>/", views.referencia, name="referencia"),
 ]

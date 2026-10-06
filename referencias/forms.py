@@ -3,6 +3,11 @@ from django import forms
 
 
 class SubirBibForm(forms.Form):
+    nombre = forms.CharField(
+        label="Nombre del proyecto o bibliografía (p. ej. MRI, US, paper-x)",
+        max_length=200, required=False,
+        widget=forms.TextInput(attrs={"placeholder": "Ej.: MRI-bibliografia"}),
+    )
     archivo = forms.FileField(label="Archivo .bib")
     tabs = forms.IntegerField(label="Pestañas doi2bib en paralelo",
                               min_value=1, max_value=20, initial=10)

@@ -104,7 +104,11 @@ prefieres no duplicar el modelo.
 
 ## Uso
 
-Sube el `.bib` en el formulario y sigue el progreso en vivo. Al terminar:
+Sube el `.bib` en el formulario, asígnale un **nombre de proyecto**
+(p. ej. `MRI`, `US`, `paper-x`) para reconocerlo al volver, y sigue el
+progreso en vivo. La lista de lotes de la portada tiene **paginador** y
+**eliminación** (🗑️, con confirmación; bloqueado mientras el lote corre).
+Al terminar:
 
 - **Tabla con estados** filtrable por chip (abajo), con el detalle de cada
   verificación.
