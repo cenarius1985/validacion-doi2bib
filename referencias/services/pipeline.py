@@ -74,7 +74,7 @@ async def _procesar_con_doi(ref, cliente, sem, bonsai_on, lote,
                     bibtex, fuente = pag, "página del artículo vía doi.org"
         if bibtex:
             ref.doi2bib_bibtex = bibtex
-            res = bib.comparar(ref.cuerpo, bibtex)
+            res = bib.comparar(ref.cuerpo, bibtex, tipo_local=ref.tipo)
             ref.similitud = res["similitud"]
             ref.estado, ref.detalle = res["estado"], "; ".join(res["detalles"])
             if fuente != "doi2bib":
@@ -696,10 +696,14 @@ def _reconstruir(ref, titulo_remoto=False, clave=None):
     """Entrada corregida según política: manda doi.org en campos de autoridad,
     se conserva la clave (salvo desambiguación de claves repetidas). El título
     es el local si coincide >=0.90; en aceptaciones de Bonsai con sim menor,
-    manda el título de doi2bib."""
+    manda el título de doi2bib. El TIPO también manda la autoridad cuando
+    difiere (entradas mal etiquetadas: @book para un artículo)."""
     m = re.search(r"@(\w+)\s*\{\s*[^,]+,(.*)\Z", ref.doi2bib_bibtex, re.S)
     cuerpo_remoto = m.group(2) if m else ""
-    lineas = ["@%s{%s," % (ref.tipo or "article", clave or ref.clave)]
+    tipo_remoto = m.group(1).lower() if m else ""
+    # R2: el tipo de la autoridad gana (si el cuerpo la declara).
+    tipo = (tipo_remoto or ref.tipo or "article").lower()
+    lineas = ["@%s{%s," % (tipo, clave or ref.clave)]
     t_loc = bib.valor_campo(ref.cuerpo, "title")
     t_rem = bib.valor_campo(cuerpo_remoto, "title")
     if titulo_remoto and t_rem:

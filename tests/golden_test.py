@@ -121,6 +121,31 @@ class AceptacionDeterminista(unittest.TestCase):
         self.assertFalse(ok)
 
 
+class EtiquetadoYNumber(unittest.TestCase):
+    """Gap real 2026-10-06: GonzalezWoods2018DIP4e era @book con las
+    paginas guardadas en number y pasaba como OK."""
+
+    def test_paginas_en_number_y_tipo_book_vs_article_es_warn(self):
+        loc = ("title={The Role of Water Compartments}, author={Granke, M}, "
+               "journal={Calcified Tissue International}, year={2015}, "
+               "volume={97}, number={292-307}, doi={10.1007/x}, ")
+        rem = ("@article{Granke2015, title={The Role of Water Compartments}, "
+               "journal={Calcified Tissue International}, year={2015}, "
+               "volume={97}, number={3}, pages={292--307}, "
+               "doi={10.1007/x}}")
+        res = bib.comparar(loc, rem, tipo_local="book")
+        self.assertEqual(res["estado"], "WARN")
+        self.assertTrue(any(d.startswith("number") for d in res["detalles"]))
+        self.assertTrue(any(d.startswith("tipo") for d in res["detalles"]))
+
+    def test_number_correcto_no_molesta(self):
+        loc = ("title={T}, author={A, B}, journal={J}, year={2015}, "
+               "volume={97}, number={3}, pages={292--307}, ")
+        rem = ("@article{y, title={T}, author={A, B}, journal={J}, "
+               "year={2015}, volume={97}, number={3}, pages={292--307}}")
+        self.assertEqual(bib.comparar(loc, rem, tipo_local="article")["estado"], "OK")
+
+
 class Guardias(unittest.TestCase):
     def test_buckwalter_corto_ambiguo_no_acepta_solo_determinista(self):
         # quedó en Bonsai (sim 0.774): el determinista NO debe aceptarlo

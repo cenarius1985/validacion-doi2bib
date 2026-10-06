@@ -18,11 +18,16 @@ del artículo vía doi.org (meta `citation_*`). El LLM y los buscadores solo
 *proponen* candidatos; el LLM **jamás** genera un DOI, título o año.
 *Implementación:* `pipeline._procesar_busqueda`, `buscador.*`.
 
-## R2 — En discrepancia, manda la autoridad (campos y clave)
+## R2 — En discrepancia, manda la autoridad (campos, clave y TIPO)
 
 Si la entrada local difiere de lo que dice la autoridad en campos de
 autoridad (author, journal, year, volume, number, pages, doi), el
 `corregido.bib` reconstruye la entrada con los valores de la autoridad.
+Desde 2026-10-06 (v2) el comparador también vigila el campo **number**
+(una entrada real tenía las páginas guardadas en `number`: 292-307 vs el
+issue 3) y el **tipo de entrada** (`@book` para un artículo y viceversa
+son incompatibles → WARN y reparación: la entrada reconstruida adopta el
+tipo de la autoridad).
 Desde 2026-10-06 la clave también se reemplaza por la de doi2bib: una
 clave cambiada avisa que la entrada fue reescrita y obliga a revisar el
 `\cite` (el informe lista `vieja → nueva`). Excepciones: cuerpos

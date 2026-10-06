@@ -243,11 +243,17 @@ def _anios_cercanos(y_loc, y_rem):
         return y_loc == y_rem
 
 
-def comparar(cuerpo_local, cuerpo_remoto):
+# Tipos de entrada incompatibles entre si (el resto de pares se tolera:
+# articulo vs inbook/proceedings segun el estilo de quien cita).
+TIPO_INCOMPATIBLE = {("book", "article"), ("article", "book")}
+
+
+def comparar(cuerpo_local, cuerpo_remoto, tipo_local=None):
     """Compara una entrada local contra el BibTeX de doi2bib.
 
     Devuelve dict: estado (OK/WARN/MISMATCH), detalles[], similitud,
-    borde (True si conviene consulta LLM).
+    borde (True si conviene consulta LLM). tipo_local (opcional) permite
+    detectar entradas mal etiquetadas (p. ej. @book para un articulo).
     """
     detalles = []
     estado = "OK"
@@ -303,12 +309,26 @@ def comparar(cuerpo_local, cuerpo_remoto):
             estado = "MISMATCH"
             detalles.append("year local=%s vs doi2bib=%s" % (y_loc, y_rem))
 
-    for f in ("journal", "volume", "pages"):
+    # number TAMBIEN se compara: en el .bib real habia paginas guardadas
+    # en number (292-307 vs issue 3) y pasaba como OK (gap 2026-10-06).
+    for f in ("journal", "volume", "pages", "number"):
         lv, rv = campo(cuerpo_local, f), campo(cuerpo_remoto, f)
         if lv and rv and parecido(lv, rv) < 0.75:
             if estado == "OK":
                 estado = "WARN"
             detalles.append("%s local='%s' vs doi2bib='%s'" % (f, lv[:50], rv[:50]))
+
+    # Tipo de entrada mal etiquetado: @book para un articulo (y viceversa).
+    m_loc = re.match(r"\s*@(\w+)", cuerpo_local) if tipo_local is None else None
+    tipo_loc = (tipo_local or (m_loc.group(1).lower() if m_loc else "")) or ""
+    m_rem = re.match(r"\s*@(\w+)", cuerpo_remoto)
+    tipo_rem = m_rem.group(1).lower() if m_rem else ""
+    if (tipo_loc and tipo_rem
+            and (tipo_loc, tipo_rem) in TIPO_INCOMPATIBLE):
+        if estado == "OK":
+            estado = "WARN"
+        detalles.append("tipo local=@%s vs doi2bib=@%s (entrada mal etiquetada)"
+                        % (tipo_loc, tipo_rem))
 
     # Bonsai se consulta en la franja dudosa del título y en CUALQUIER
     # MISMATCH con título razonablemente parecido Y que comparta palabras
