@@ -166,6 +166,10 @@ docker compose exec web python manage.py validar --lote 1 --reprocesar
   challenges tipo Cloudflare se detectan y descartan).
 - **Anti-invención**: ningún DOI entra al `corregido.bib` sin haberse
   resuelto antes en una de esas fuentes.
+
+📚 **Runbook completo** — flujos de decisión, política de reintentos y
+eliminación, riesgos residuales evaluados y plan de mejora por fases:
+[`docs/RUNBOOK-VALIDACION.md`](docs/RUNBOOK-VALIDACION.md).
 - **Manda el nombre, y lo no verificable se elimina**: si el título no
   coincide con lo que trae el DOI, el DOI está mal — se re-busca en la web
   por el NOMBRE, se verifica el DOI real en doi2bib/Crossref y se conserva
