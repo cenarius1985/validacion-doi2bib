@@ -121,7 +121,8 @@ Al terminar:
 - **`corregido.bib`**: la propuesta reparada y deduplicada; tu original no
   se toca.
 
-![Formulario de carga](docs/img/01-subir.png)
+![Formulario de carga con nombre de proyecto](docs/img/01-subir.png)
+![Lotes con paginador y eliminación](docs/img/05-lotes.png)
 ![Deduplicación por DOI](docs/img/03-duplicados.png)
 ![Detalle con veredicto de Bonsai](docs/img/04-referencia.png)
 
