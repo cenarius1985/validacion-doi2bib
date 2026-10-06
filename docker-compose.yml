@@ -1,19 +1,31 @@
+# Stack TODO-EN-UNO: validador + LLM Bonsai en el mismo compose.
+# Pensado para compartir: `docker compose up -d --build` y listo, sin
+# depender del compose `ollamaLocal` del host ni de host.docker.internal.
+#
+# El modelo (Ternary-Bonsai-8B-PQ2_0.gguf, ~2 GB) se descarga UNA sola vez
+# de HuggingFace al volumen `bonsai_models` y persiste entre reinicios.
+# CPU-only por diseño (-ngl 0): corre en cualquier máquina con Docker.
+#
+# OJO: el GGUF ternario requiere el FORK PrismML de llama.cpp (el oficial
+# no soporta su cuantización, ggml type 142). El Dockerfile vendido en
+# ./bonsai descarga el binario precompilado del release del fork.
 name: validacion-doi2bib
 
 services:
   web:
     build: .
     image: validacion-doi2bib:local
-    container_name: validacion-doi2bib-web
     restart: unless-stopped
     ports:
-      - "8090:8000"
+      # WEB_PORT para evitar colisión si el 8090 está ocupado.
+      - "${WEB_PORT:-8090}:8000"
     environment:
-      # Bonsai: LLM local del compose `ollamaLocal` (puerto host 4687).
-      # Desde el contenedor se alcanza vía host.docker.internal (Docker Desktop).
-      - BONSAI_BASE_URL=${BONSAI_BASE_URL:-http://host.docker.internal:4687/v1}
+      # Bonsai INTERNO: el servicio `bonsai` de este mismo compose.
+      # (Override: si prefieres tu Bonsai externo, exporta BONSAI_BASE_URL.)
+      - BONSAI_BASE_URL=${BONSAI_BASE_URL:-http://bonsai:8080/v1}
       - BONSAI_MODEL=${BONSAI_MODEL:-ternary-bonsai-8b}
       - BONSAI_TIMEOUT=${BONSAI_TIMEOUT:-180}
+      - BONSAI_CONCURRENCIA=${BONSAI_CONCURRENCIA:-4}
       # Pestañas doi2bib en paralelo y cortesía con el servicio.
       - DOI2BIB_TABS=${DOI2BIB_TABS:-10}
       - DOI2BIB_MIN_INTERVALO=${DOI2BIB_MIN_INTERVALO:-1.0}
@@ -28,7 +40,44 @@ services:
       - media:/app/media
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      # El validador degrada elegante si Bonsai cae; started (no healthy)
+      # para no bloquear el arranque durante la primera descarga (~2 GB).
+      bonsai:
+        condition: service_started
+
+  # ---------------------------------------------------------- LLM Bonsai
+  # Fork PrismML de llama.cpp (el estándar no ejecuta GGUF ternarios).
+  # El entrypoint baja el modelo de HuggingFace solo la primera vez.
+  # ¿HF bloqueado en tu red? Baja el GGUF a una carpeta local (pendrive,
+  # mirror corporativo...) y lanza con:
+  #   BONSAI_MODELS_BIND=./models docker compose up -d
+  bonsai:
+    build: ./bonsai
+    image: validacion-doi2bib-bonsai:local
+    restart: unless-stopped
+    volumes:
+      - "${BONSAI_MODELS_BIND:-bonsai_models}:/models"
+    environment:
+      - BONSAI_GGUF=${BONSAI_GGUF:-Ternary-Bonsai-8B-PQ2_0.gguf}
+      - BONSAI_HF_REPO=${BONSAI_HF_REPO:-prism-ml/Ternary-Bonsai-8B-gguf}
+      - BONSAI_CTX=${BONSAI_CTX:-8192}
+      # BONSAI_NGL>0 usa GPU si la hay (Vulkan/CUDA según el binario); 0 = CPU.
+      - BONSAI_NGL=${BONSAI_NGL:-0}
+    # Puerto al host SOLO para debug (probar http://localhost:4688/v1/models).
+    # El web lo alcanza por la red interna de compose, no necesita este mapa.
+    ports:
+      - "${BONSAI_HOST_PORT:-4688}:8080"
+    healthcheck:
+      # /health del llama-server: 503 mientras carga, 200 cuando listo.
+      test: ["CMD-SHELL", "curl -sf -o /dev/null http://127.0.0.1:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 60
+      start_period: 180s
 
 volumes:
-  datos:      # SQLite (lotes y referencias)
-  media:      # .bib subidos + informes generados
+  datos:          # SQLite (lotes y referencias)
+  media:          # .bib subidos + informes generados
+  bonsai_models:  # GGUF del LLM (persistente; ~2 GB tras la primera bajada)
+                  # (no se usa si BONSAI_MODELS_BIND apunta a una carpeta local)

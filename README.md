@@ -10,21 +10,39 @@ dudosos y rankear candidatos.
 ninguna ventana de navegador en tu pantalla.** **Nada se inventa**: todo DOI
 propuesto fue verificado antes en doi2bib (título coincidente determinista).
 
-## Puesta en marcha
+## Puesta en marcha (rama `todo-en-uno`: TODO incluido)
 
 ```bash
 docker compose up -d --build
 # abre http://localhost:8090
 ```
 
-Opcional (recomendado): levantar el LLM Bonsai del repo `ollamaLocal`:
+Eso es todo: el compose de esta rama **incluye el LLM Bonsai dentro del
+mismo stack** (servicio `bonsai`, imagen oficial de llama.cpp). En el
+primer arranque se descarga el modelo desde HuggingFace una única vez
+(`Ternary-Bonsai-8B-PQ2_0.gguf`, ~2 GB, queda persistido en el volumen
+`bonsai_models`; los arranques siguientes no vuelven a bajar nada). La
+inferencia es CPU (`-ngl 0`): no hace falta GPU.
+
+- Web: <http://localhost:8090> · Bonsai interno (debug): <http://localhost:4688>
+- Puertos ocupados: `WEB_PORT=9090 docker compose up -d --build`
+- Reintentar sin Bonsai o con otro modelo: ver variables en `.env.example`
+  (`BONSAI_BASE_URL`, `BONSAI_GGUF`, `BONSAI_HF_REPO`, `BONSAI_CTX`).
+
+**¿HuggingFace bloqueado en tu red?** Dos salidas:
 
 ```bash
-docker compose -f C:/Users/fernando.ramirez/Documents/GitHub/ollamaLocal/docker-compose.yml up -d bonsai
-curl http://localhost:4687/health   # debe responder ok
+# Opción A: carpeta local con el GGUF (pendrive/mirror corporativo)
+mkdir models && cp /ruta/a/Ternary-Bonsai-8B-PQ2_0.gguf models/
+BONSAI_MODELS_BIND=./models docker compose up -d --build
+
+# Opción B: copiarlo directo al volumen ya creado
+docker cp Ternary-Bonsai-8B-PQ2_0.gguf <contenedor-bonsai>:/models/
+docker compose restart bonsai
 ```
 
-Sin Bonsai el sistema funciona igual (veredictos LLM quedan vacíos).
+Sin Bonsai el sistema funciona igual (veredictos LLM quedan vacíos): si el
+servicio `bonsai` está caído, la validación sigue determinista.
 
 ## Uso
 
